@@ -90,23 +90,29 @@ def decode_cashu_token(token):
 def extract_proofs(decoded):
     """Extract proof list from decoded token structure.
 
-    Handles V3 format: {"token": [{"mint": ..., "proofs": [...]}], "unit": "sat"}
-    Handles V4 format: {"token": {"mint": ..., "proofs": [...]}, ...}
+    Handles V3 CBOR format: {"t": [{"i": keyset_id, "p": [...]}], "m": mint_url, "u": "sat"}
+    Handles V3 JSON format: {"token": [{"mint": ..., "proofs": [...]}], "unit": "sat"}
+    Handles V4 JSON format: {"token": {"mint": ..., "proofs": [...]}, ...}
     """
-    # V4 nested token
+    # CBOR short-key format: {"t": [...], "m": ..., "u": ...}
     if isinstance(decoded, dict):
+        if "t" in decoded:
+            token_list = decoded["t"]
+            if isinstance(token_list, list):
+                proofs = []
+                for entry in token_list:
+                    proofs.extend(entry.get("p", []))
+                return proofs
+        # JSON nested token
         token_obj = decoded.get("token", decoded)
         if isinstance(token_obj, dict):
-            # V4 single mint
             return token_obj.get("proofs", [])
         elif isinstance(token_obj, list):
-            # V3 multi-mint array
             proofs = []
             for entry in token_obj:
                 proofs.extend(entry.get("proofs", []))
             return proofs
     elif isinstance(decoded, list):
-        # Raw proof list
         return decoded
     return []
 
@@ -136,11 +142,19 @@ def check_token_state(mint_url, token, timeout=10):
     # Build checkstate request — NUT-07 uses Y values
     check_proofs = []
     for p in proofs:
-        if "Y" in p:
-            check_proofs.append({"Y": p["Y"]})
-        elif "id" in p and "amount" in p:
-            # Some formats store secret instead of Y; we still try
-            check_proofs.append({"Y": p.get("Y", ""), "id": p.get("id", "")})
+        # CBOR format uses 'c' for commitment/Y, JSON uses 'Y'
+        y_val = ""
+        if "c" in p:
+            # CBOR bytes — convert to hex
+            c = p["c"]
+            if isinstance(c, bytes):
+                y_val = c.hex()
+            else:
+                y_val = str(c)
+        elif "Y" in p:
+            y_val = p["Y"]
+        if y_val:
+            check_proofs.append({"Y": y_val})
 
     resp = requests.post(
         f"{mint_url}{CHECKSTATE_PATH}",
@@ -177,9 +191,12 @@ def submit_token_to_router(router_ip, token, timeout=30):
 
 
 def get_token_amount(decoded):
-    """Sum all proof amounts from decoded token."""
+    """Sum all proof amounts from decoded token.
+
+    Handles CBOR short keys (a=amount) and JSON keys (amount=amount).
+    """
     proofs = extract_proofs(decoded)
-    return sum(p.get("amount", 0) for p in proofs)
+    return sum(p.get("a", p.get("amount", 0)) for p in proofs)
 
 
 def main():
