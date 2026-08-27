@@ -244,6 +244,14 @@ test('cashu tab UX: no size buttons, no amount display, token input present; Lig
     const visibleSizeButtons = Array.from(sizeButtons).filter(btn => btn.offsetParent !== null);
     const tokenInput = document.querySelector('input[placeholder^="cashuxyz"]');
 
+    // Strip 'Rate:' and 'Minimum:' lines before checking for stray sats amounts.
+    // These pricing lines legitimately contain "N sats" text — they are NOT the
+    // selectedSats/amount display we are asserting against.
+    const viewTextStripped = viewText
+      .split('\n')
+      .filter(line => !/^\s*(Rate:|Minimum:)/i.test(line))
+      .join('\n');
+
     return {
       cashuTabActive: document.querySelector('.tollgate-captive-portal-tabs-tab-cashu')?.getAttribute('data-active'),
       lightningTabActive: document.querySelector('.tollgate-captive-portal-tabs-tab-lightning')?.getAttribute('data-active'),
@@ -251,7 +259,9 @@ test('cashu tab UX: no size buttons, no amount display, token input present; Lig
       sizeButtonsTotal: sizeButtons.length,
       sizeButtonsVisible: visibleSizeButtons.length,
       hasHowMuchHeading: viewText.includes('How much Internet would you like to buy?'),
-      hasSatsAmount: /\d+\s*sats/i.test(viewText),
+      // Strip Rate:/Minimum: pricing lines so "1 sat per 21 MB" doesn't false-fail
+      hasSatsAmount: /\d+\s*sats/i.test(viewTextStripped),
+      hasRateLine: /Rate:\s*\d+\s*sats?\s*per/i.test(viewText),
       viewText: viewText.substring(0, 400),
       tokenInputPresent: !!tokenInput,
       tokenInputVisible: tokenInput ? tokenInput.offsetParent !== null : false,
@@ -275,6 +285,16 @@ test('cashu tab UX: no size buttons, no amount display, token input present; Lig
   expect(cashuState.hasSatsAmount,
     `Cashu tab must NOT show selectedSats/amount text ("X sats") — view text was: ${cashuState.viewText}`).toBe(false);
   console.log('[TEST2] ✅ Cashu tab has NO selectedSats/amount display');
+
+  // 5b-2. Rate line assertion — Cashu tab MUST show "Rate: N sats per ..." pricing info
+  // This is the new pricing-block feature. Must appear BEFORE the token input.
+  expect(cashuState.hasRateLine,
+    `Cashu tab MUST show a "Rate: N sats per ..." pricing line — view text was: ${cashuState.viewText}`).toBe(true);
+  console.log('[TEST2] ✅ Cashu tab shows Rate: pricing line (pricing block rendered)');
+
+  // Take screenshot of Cashu tab with Rate line visible
+  await page.screenshot({ path: `${SCREENSHOT_DIR}/test2-cashu-rate-line-screenshot.png`, fullPage: true });
+  console.log(`[TEST2] Cashu Rate line screenshot saved to ${SCREENSHOT_DIR}/test2-cashu-rate-line-screenshot.png`);
 
   // 5c. Token input field MUST be present and visible
   expect(cashuState.tokenInputPresent,
