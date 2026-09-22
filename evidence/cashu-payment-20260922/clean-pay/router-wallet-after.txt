@@ -1,0 +1,4 @@
+=== wallet.db stat AFTER ===
+5cd52315dc636b3b8e89eca81a227f1c2475cf47ae357b2ac2fc4eef9c850c00  /etc/tollgate/wallet.db
+=== merchant wallet total balance (tollgate CLI) ===
+-rw-------    1 root     root        131072 Sep 22 08:36 /etc/tollgate/wallet.db

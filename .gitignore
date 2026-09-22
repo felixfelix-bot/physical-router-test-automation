@@ -81,3 +81,6 @@ tests/report/
 .env.rust-basic-local.bak
 .env.lab-routers-backup
 .env.tunnel
+
+# Cashu token secrets (never commit)
+evidence/**/token*.txt

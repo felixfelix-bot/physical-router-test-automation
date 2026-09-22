@@ -1,0 +1,6 @@
+1d79255a4c8f6470c149ba3e7a06743cb49e124f3e2e89d4221289b24bf85444  /etc/tollgate/wallet.db
+{
+"client_length": 1,
+"clients":{
+"00:e0:4c:68:3d:2d":{
+"id":1,

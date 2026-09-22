@@ -1,0 +1,1 @@
+amount=21 mint=https://nofee.testnut.cashu.space keyset=00b4cd27d8861a44

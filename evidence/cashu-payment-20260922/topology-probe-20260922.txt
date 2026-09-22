@@ -1,0 +1,10 @@
+== TOPOLOGY RE-PROBE (2026-09-22) ==
+192.168.8.1  : ICMP up (ttl63), ALL TCP refused (22,53,80,443,2050,2051,2121,8080,8090,8291). Documented beta LAN IP UNREACHABLE from this workstation on any app port.
+192.168.21.205:2121 : LIVE FULL-MODE tollgate merchant. GL.iNet MAC 94:83:c4:74:d3:03.
+                    /whoami -> mac=8c:16:45:0d:6f:c5 (our enp0s31f6).
+                    /balance -> {"status":1,"session_active":false,...}
+                    Advertises: coinos, minibits.cash/Bitcoin, nofee.testnut.cashu.space
+                    ONLY 2121 open on .205 (2050/2051/8080/8090/443/80 closed).
+192.168.21.21 : DHCP gateway for our enp0s31f6 (192.168.21.200). GL.iNet MAC 94:83:c4:8c:59:c3. SSH open but test123 denied. Ports 22/53/80/443 only (NO 2121).
+== DECISION == Drive purchase against reachable live merchant at 192.168.21.205:2121 (the operator's single-hop lab merchant). SSH on-box wallet.db before/after = INCONCLUSIVE (SSH refused on .8.1 and .205:22). Session-flip on :2121/balance is fully provable via .205:2121.
+== MINT == Use nofee.testnut.cashu.space (v0 keyset 00b4cd27d8861a44, advertised by merchant, reachable from workstation; router reaches testnut).
