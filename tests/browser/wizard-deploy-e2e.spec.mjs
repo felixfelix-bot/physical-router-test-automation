@@ -12,9 +12,9 @@
  *   8. Take screenshot
  *   9. Cleanup: kill wizard, log router backend status
  *
- * Environment variables:
- *   ROUTER_IP            (required unless default lab IP reachable)
- *   ROUTER_PASSWORD      (required — router root password)
+ * Environment variables (with defaults):
+ *   ROUTER_IP            (default: 192.168.28.1)
+ *   ROUTER_PASSWORD      (default: test123)
  *   WIZARD_RELEASE_URL   (default: v0.7.0-alpha8 release)
  *   LNURL                (default: c3e23eb5e3d00f18b2f4f588@coinos.io)
  *   MINT                 (default: https://mint.coinos.io)
@@ -22,7 +22,6 @@
  *   WIFI_PASSWORD        (optional, for STA mode)
  *   WIZARD_PORT          (default: 8099)
  *   DEPLOY_MODE          (default: wan, or sta)
- *   ROUTER_MAC           (optional, ARP-MAC fallback when branding changes the LAN IP)
  *   DEV_SPLIT            (default: 10)
  *   MARGIN               (default: 0)
  */
@@ -34,8 +33,8 @@ import { resolve, join } from 'path';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-const ROUTER_IP          = process.env.ROUTER_IP          || '192.168.1.1';
-const ROUTER_PASSWORD    = process.env.ROUTER_PASSWORD    || '';
+const ROUTER_IP          = process.env.ROUTER_IP          || '192.168.28.1';
+const ROUTER_PASSWORD    = process.env.ROUTER_PASSWORD    || 'test123';
 const WIZARD_RELEASE_URL = process.env.WIZARD_RELEASE_URL || 'https://github.com/felixfelix-bot/net4sats-wizard-go/releases/download/v0.7.0-alpha8/net4sats-wizard';
 const LNURL              = process.env.LNURL              || 'c3e23eb5e3d00f18b2f4f588@coinos.io';
 const MINT               = process.env.MINT               || 'https://mint.coinos.io';
@@ -414,9 +413,8 @@ test('splash: page shows Lightning invoice (not degraded mode)', async ({ page }
   console.log('═══════════════════════════════════════════════════════════════\n');
 
   const splashPort = process.env.SPLASH_PORT || '2051';
-  const ROUTER_MAC = process.env.ROUTER_MAC || '';
   // Branding may change the router's LAN IP mid-deploy. Probe ROUTER_IP via SSH
-  // first; if unreachable, discover the new IP by ARP using ROUTER_MAC.
+  // first; if unreachable, discover the new IP by ARP MAC (94:83:c4:8c:59:c3).
   let routerIp = ROUTER_IP;
   const probe = execSync(
     `sshpass -p '${ROUTER_PASSWORD}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -o BatchMode=no root@${ROUTER_IP} 'echo alive' 2>/dev/null || true`,
@@ -426,17 +424,12 @@ test('splash: page shows Lightning invoice (not degraded mode)', async ({ page }
     console.log(`[SPLASH] Router not reachable at ${ROUTER_IP} (probe="${probe}") — ARP-scanning for MAC ...`);
     let foundIp = '';
     try {
-      if (ROUTER_MAC) {
-        // ping-sweep the /24 (derived from ROUTER_IP) to populate ARP cache, then match the MAC
-        const sweepSubnet = ROUTER_IP.replace(/\.\d+$/, '');
-        execSync(`for i in $(seq 1 254); do ping -c1 -W1 ${sweepSubnet}.$i >/dev/null 2>&1 & done; wait`, { timeout: 30000 });
-        foundIp = execSync(
-          `ip neigh | grep -i '${ROUTER_MAC}' | awk '{print $1}' | head -1`,
-          { encoding: 'utf8' }
-        ).trim();
-      } else {
-        console.log('[SPLASH] ROUTER_MAC not set — skipping ARP MAC lookup');
-      }
+      // ping-sweep the /24 to populate ARP cache, then match the MAC
+      execSync(`for i in $(seq 1 254); do ping -c1 -W1 192.168.1.$i >/dev/null 2>&1 & done; wait`, { timeout: 30000 });
+      foundIp = execSync(
+        `ip neigh | grep -i '94:83:c4:8c:59:c3' | awk '{print $1}' | head -1`,
+        { encoding: 'utf8' }
+      ).trim();
     } catch {}
     if (foundIp) {
       routerIp = foundIp;

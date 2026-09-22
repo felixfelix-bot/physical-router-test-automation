@@ -45,7 +45,7 @@ async function tryAdminLogin(page) {
   }
   console.log('  found password field, attempting login...');
   // Try common passwords
-  const passwords = [process.env.TOLLGATE_LUCI_PASSWORD || '', 'RETRIEVE_FROM_VAULT', 'root', 'password', 'admin', ''];
+  const pwCandidates = [process.env.TOLLGATE_LUCI_PASSWORD || '', 'test123', 'root', 'admin', ''];
   for (const pw of passwords) {
     if (!pw && passwords.indexOf(pw) !== 0) continue;
     await passwordInput.fill(pw);

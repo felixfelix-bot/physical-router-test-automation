@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 
 const WIZARD_URL = 'http://localhost:9876';
-const ROUTER_PASSWORD = 'RETRIEVE_FROM_VAULT';
+const ROUTER_PASSWORD = process.env.ROUTER_PASSWORD || 'test123';
 
 test.use({
     actionTimeout: 30000,
@@ -47,8 +47,8 @@ test('net4sats onboarding wizard — auto-detect router and deploy', async ({ pa
 
     // ── Step 3: Enter password ──
     await test.step('Enter router password', async () => {
-        const passwordInput = page.locator('#password');
-        await passwordInput.fill(ROUTER_PASSWORD);
+        const pwInput = page.locator('#password');
+        await pwInput.fill(ROUTER_PASSWORD);
         await page.waitForTimeout(500);
         await page.screenshot({ path: 'screenshots/wizard-03-password.png' });
     });

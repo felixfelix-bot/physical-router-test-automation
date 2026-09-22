@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test';
 
 const ADMIN_URL = 'http://192.168.1.1:8090/net4sats/';
-const PASSWORD = 'RETRIEVE_FROM_VAULT';
+const PASSWORD = process.env.TOLLGATE_LUCI_PASSWORD || 'test123';
 
 test.describe.configure({ mode: 'serial' });
 
