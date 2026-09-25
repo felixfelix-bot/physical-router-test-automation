@@ -94,7 +94,7 @@ jobs:
     # Manual dispatch always runs. The cron only runs once the bench runner is
     # declared live by the operator (repo variable), so no ghost runs.
     if: github.event_name == 'workflow_dispatch' || vars.HW_BENCH_SCHEDULE == 'true'
-    runs-on: [self-hosted, tollgate-router]
+    runs-on: [self-hosted]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -128,7 +128,7 @@ jobs:
     needs: [readonly-surface]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.lane == 'mutating'
     environment: bench-hardware
-    runs-on: [self-hosted, tollgate-router]
+    runs-on: [self-hosted]
     timeout-minutes: 60
     env:
       TOLLGATE_LUCI_URL: ${{ secrets.TOLLGATE_LUCI_URL }}
@@ -196,7 +196,7 @@ jobs:
       && github.event.inputs.lane == 'mutating'
       && github.event.inputs.include_destructive == 'true'
     environment: bench-hardware
-    runs-on: [self-hosted, tollgate-router]
+    runs-on: [self-hosted]
     timeout-minutes: 90
     env:
       TOLLGATE_LUCI_URL: ${{ secrets.TOLLGATE_LUCI_URL }}
