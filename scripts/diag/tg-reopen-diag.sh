@@ -74,6 +74,21 @@ say " CLI subcommands: $(tollgate --help 2>&1 | sed -n '2,12p' | tr '\n' ' ')"
 say " /etc/tollgate  : $(ls /etc/tollgate/ 2>/dev/null | tr '\n' ' ')"
 if [ -n "$MAC" ]; then say " sessions (cli) : $(tollgate sessions 2>&1 | head -12 | tr '\n' ' ')"; fi
 
+sec "4b. THE SECOND PURCHASE — did the money actually arrive?"
+say " wallet (total)  : $(tollgate wallet balance 2>&1 | tr '\n' ' ')"
+say " wallet subcmds  : $(tollgate wallet --help 2>&1 | sed -n '1,14p' | tr '\n' ' ')"
+say " sessions        : $(tollgate sessions 2>&1 | head -16 | tr '\n' ' ')"
+say " /etc/tollgate files + mtimes (a real purchase must touch at least one):"
+ls -l /etc/tollgate/ 2>/dev/null | sed 's/^/    /'
+say " API /balance    : $(fetch http://127.0.0.1:2121/balance | head -c 300)"
+say " API /usage      : $(fetch http://127.0.0.1:2121/usage | head -c 300)"
+say " ---- payment-related log lines:"
+logread 2>/dev/null | grep -iE 'invoice|redeem|receiv|melt|proof|cashu|1022|session|topup|allot|payment|swap' | tail -50 | sed 's/^/    /'
+say " ---- how many payment/session events the log holds in total:"
+say "      $(logread 2>/dev/null | grep -icE 'invoice|redeem|session event|kind:1022')"
+say " ---- per-mint balances (the payout lines above print them every minute):"
+logread 2>/dev/null | grep -i 'Skipping payout' | tail -12 | sed 's/^/    /'
+
 sec "5. the admin board on :8090 (why LuCI instead of TollGate Admin?)"
 say " ---- uci show uhttpd:"
 uci show uhttpd 2>/dev/null | sed 's/^/    /'
@@ -134,6 +149,14 @@ fi
 
 say ""
 say "=== verdict: $OK pass / $BAD fail ==="
-say "Send the WHOLE output, plus: did the client's OS show a sign-in prompt at any point, and"
-say "what did the portal say when it granted the new allotment (balance before/after)."
+say "Send the WHOLE output, plus these FOUR facts only you have:"
+say "  1. did you restart the service (or reboot) between the failed and the working :2121?"
+say "     (the box says the socket was created at a time well after boot — that matters)"
+say "  2. on the portal: what did the SECOND purchase say it charged (sats) and from which mint,"
+say "     and what did the wallet say immediately BEFORE vs AFTER it?"
+say "  3. did the client's OS ever show a sign-in prompt, or did it silently have no internet?"
+say "  4. for :8090 — from a terminal on your laptop, NOT a browser:"
+say "       curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' http://tollgate.lan:8090/"
+say "       curl -s http://tollgate.lan:8090/ | grep -o '<title>[^<]*'
+say "     (a browser can keep a cached LuCI redirect or force HTTPS; curl cannot)"
 exit 0
