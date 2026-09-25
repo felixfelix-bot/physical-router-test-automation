@@ -157,6 +157,6 @@ say "     and what did the wallet say immediately BEFORE vs AFTER it?"
 say "  3. did the client's OS ever show a sign-in prompt, or did it silently have no internet?"
 say "  4. for :8090 — from a terminal on your laptop, NOT a browser:"
 say "       curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' http://tollgate.lan:8090/"
-say "       curl -s http://tollgate.lan:8090/ | grep -o '<title>[^<]*'
+say "       curl -s http://tollgate.lan:8090/ | grep -o '<title>[^<]*'"
 say "     (a browser can keep a cached LuCI redirect or force HTTPS; curl cannot)"
 exit 0
