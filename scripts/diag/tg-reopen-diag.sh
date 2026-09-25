@@ -123,16 +123,30 @@ cat <<'REPAIR'
        # then: http://<router>:8090/ must answer with <title>TollGate Admin</title>
        # NOTE: run this AFTER capturing section 5 above — the stale config is the evidence.
 
-  B) THE STUCK CLIENT (the discriminating experiment for "balance back, gate shut"):
-       ndsctl deauth <client-mac>          # drop the stale nodogsplash session
-       # then reload the portal on the client and/or let the OS probe re-fire.
-       # OUTCOMES:
-       #   - the portal appears and, after entering/continuing, the internet works
-       #       => the bug is a STALE ND SESSION: the client stayed "authenticated"
-       #          across the exhaustion, so nothing re-interrogated it, and the top-up
-       #          never refreshed its authorisation. Report this verbatim.
-       #   - still dead => the block is in nftables (see the counters in section 3):
-       #          the mark was never flipped back. Report the chain with counters.
+  HOW THE GATE ACTUALLY WORKS (packaging/files/etc/nftables.d/20-nds-enforce.nft):
+    NoDogSplash writes a mark in mangle PREROUTING, and the firewall only READS it:
+      0x10000 = pre-authenticated -> DROP
+      0x20000 = trusted           -> accept
+      0x30000 = authenticated     -> accept
+      unmarked                    -> reject (icmp port-unreachable)
+    So "the gate" is NDS's mark for that MAC. A balance in the module does NOT
+    open it by itself: something must make NDS mark the client 0x30000.
+
+  B) THE STUCK CLIENT — the decisive experiment (run it in TWO steps, report both):
+       B1  ndsctl clients                       # what state is YOUR mac in?
+       B2  ndsctl auth <client-mac>             # force NDS to authorise it
+           then browse on the client WITHOUT paying again.
+       OUTCOMES:
+        - B1 shows the mac Preauthenticated while the module says the balance is
+          restored, and B2 restores the internet
+             => PROVEN: the top-up grants balance but never re-authorises the client
+                in NDS. The gate is shut because nobody called ndsctl auth. Report verbatim.
+        - B1 shows Authenticated and there is still no internet
+             => the block is NOT the mark; it is upstream of it — capture the guard
+                chain counters from section 3 and the module's session state.
+        - B2 changes nothing AND B1 shows nothing registered
+             => NDS has no client entry for the mac (see section 2): the client is
+                unmarked, which is the "reject" rule, and NDS is not intercepting it.
 REPAIR
 
 if [ "${TG_FIX:-0}" = "1" ]; then
