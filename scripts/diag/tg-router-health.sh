@@ -88,7 +88,30 @@ C2051=$(uclient-fetch -q -O /dev/null -T 5 http://127.0.0.1:2051/splash.html 2>/
 hdr "5. listening sockets"
 netstat -ltn 2>/dev/null | grep -E ':(22|80|443|2050|2051|2121|8080|8090|8443)[[:space:]]' | sed 's/^/        /'
 
-hdr "6. gateway service + wallet"
+hdr "6. TRUSTED CLIENTS — a tester whose MAC is exempt never sees the portal"
+TM=$(uci -q get nodogsplash.@nodogsplash[0].trustedmac 2>/dev/null)
+if [ -z "$TM" ]; then
+    pass "nodogsplash trustedmac is empty (every client must authenticate)"
+else
+    bad "nodogsplash trustedmac is NOT empty: $TM"
+    info "these clients bypass the captive portal completely: no HTTP interception, so no"
+    info "OS sign-in prompt and free internet. A bench management-keepalive script (our"
+    info "99z-mgmt-keepalive template) writes exactly this and is easy to leave behind."
+    info "Before handing a router to a tester or the review club:"
+    info "  for m in \$(uci get nodogsplash.@nodogsplash[0].trustedmac); do uci del_list nodogsplash.@nodogsplash[0].trustedmac=\"\$m\"; done"
+    info "  uci commit nodogsplash; /etc/init.d/nodogsplash restart"
+fi
+LINGER=$(ndsctl clients 2>/dev/null | grep -cE '^client_id')
+if [ "${LINGER:-0}" -gt 0 ]; then
+    info "$LINGER client(s) still registered with nodogsplash:"
+    ndsctl clients 2>/dev/null | grep -E '^(ip|mac|state)=' | sed 's/^/        /'
+    info "deauth them with: ndsctl deauth <mac>   — a lingering authorised session keeps a"
+    info "tester's own machine online without payment."
+else
+    pass "no clients registered with nodogsplash (clean slate)"
+fi
+
+hdr "7. gateway service + wallet"
 /etc/init.d/tollgate-wrt status 2>/dev/null || info "tollgate-wrt has no status verb"
 info "wallet: $(tollgate wallet balance 2>&1 | head -3)"
 
