@@ -17,15 +17,24 @@ module pin `2796d96`, feed release `FreedomTechFeed/packages v0.6.0-alpha4-pre17
 | a Cashu token worth **≥ 64 sats** from an advertised mint, **or** a Lightning wallet | 1 sat/step, min 64 sats |
 | root password on the router (for the on-box checks) | `test123` on the bench box |
 
-Two scripts do the mechanical parts and are optional for a manual pass:
+Three scripts do the mechanical parts; all are optional for a manual pass.
 
 ```bash
-# on-router state — run AFTER the trust cleanup in step 1
+# 1. on-router state — run AFTER the trust cleanup in step 1
 ssh root@192.168.1.1 'sh -s' < <(curl -fsSL https://raw.githubusercontent.com/felixfelix-bot/physical-router-test-automation/main/scripts/diag/tg-router-health.sh)
 
-# everything, one command (state + stranger's walk + the official harness)
+# 2. everything, one command: on-router state + the stranger's walk + the official harness.
+#    It asks for the router password ONCE (the connection is then multiplexed) and walks the
+#    portal from THIS machine — which is an unauthorised client, so no sudo and no macvlan.
 bash <(curl -fsSL https://raw.githubusercontent.com/felixfelix-bot/physical-router-test-automation/main/scripts/test/club-acceptance.sh)
+
+# 3. if the portal renders but nothing can be paid (:2121 silent, no /var/run/tollgate.sock):
+ssh root@192.168.1.1 'sh -s' < <(curl -fsSL https://raw.githubusercontent.com/felixfelix-bot/physical-router-test-automation/main/scripts/diag/tg-service-diag.sh)
 ```
+
+`raw.githubusercontent.com/…/main/…` is CDN-cached and can keep serving the previous revision
+for a few minutes after a push. If the behaviour looks older than this document describes, pin
+the URL to a commit instead — `…/<full-sha>/scripts/…`.
 
 ---
 
@@ -251,3 +260,14 @@ screenshot of the OS prompt on the guest device.
    that fix, the paid lane cannot pass; it is not a build defect.
 7. The harness's own guest-vantage quirks (`:8090` expectation, preflight TCP flake) — being
    fixed in `t_ce131bc3`; the wrapper classifies them.
+
+8. **The money path can go silent while the portal looks perfect.** Measured once on a fresh
+   install after a reboot: firewall chains, nodogsplash, `:2051`, `:8090`, `:443`, `:8443` all
+   healthy and `tollgate-wrt` reported `running` — but no `:2121` and no
+   `/var/run/tollgate.sock`, so `tollgate wallet balance` failed and nothing could be bought.
+   A service restart brought it back. Under investigation (candidate release blocker): run
+   script 3 above and send its output.
+9. `club-acceptance.sh` **v1** required the author's password file and root on the tester's own
+   machine; **v2** (current) asks for the router password once and uses your machine as the
+   unauthorised client. If you are asked for a password file, you have the stale cached copy —
+   pin the URL to a commit.
