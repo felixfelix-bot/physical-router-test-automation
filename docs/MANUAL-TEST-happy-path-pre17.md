@@ -153,6 +153,12 @@ curl -s http://192.168.1.1:2121/balance   # expect session_active false  ->  tru
 curl -s http://192.168.1.1:2121/usage     # -1/-1 before, allotment after
 ```
 
+**Proven on hardware 2026-09-25** (pre17, testnut 64-sat token): the paid lane went green
+for the first time, the merchant wallet on the box moved **2 → 65 sats** (+63: one sat per
+step, 63 steps from a 64-sat token), the client's `/balance` went
+`{"session_active":true,"allotment":1387266048,"remaining":1387247616}`, that client reached
+the real internet (HTTP 200), and a *different* unauthenticated client still got the portal.
+
 **PASS requires all four:**
 1. the purchase is accepted (`200`, not a 4xx/5xx);
 2. `session_active` flips `false → true` for **that** client;
@@ -239,5 +245,9 @@ screenshot of the OS prompt on the guest device.
    (proven with a fresh MAC).
 5. `GET /ln-invoice` with no quote returns `400 {"error":"quote is required"}` — that is the
    status poll, **not** a fault.
-6. The harness's own guest-vantage quirks (`:8090` expectation, preflight TCP flake) — being
+6. The harness's paid lane needed a two-character fix (`lib/cashtoken.py` read the version
+   character at index 6 instead of 5, so *every* token failed `paid:token-inspected`) —
+   carded as `t_56262dc7`, fixed and proven. If you run the harness from a checkout older than
+   that fix, the paid lane cannot pass; it is not a build defect.
+7. The harness's own guest-vantage quirks (`:8090` expectation, preflight TCP flake) — being
    fixed in `t_ce131bc3`; the wrapper classifies them.
