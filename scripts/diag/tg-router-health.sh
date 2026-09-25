@@ -1,82 +1,104 @@
 #!/bin/sh
-# tg-router-health.sh — run ON the TollGate router (over SSH). Verdict per subsystem.
+# tg-router-health.sh — run ON the TollGate router. POSIX/busybox-ash safe.
 #
-# Purpose: answer "is this install actually applied?" — the question behind every
-# symptom seen on pre17 (admin board serving LuCI, no captive-portal detection,
-# guard chain absent). All of these are the SAME defect class: the feed postinst
-# applies uci-defaults on a RUNNING router, but 99-tollgate-setup is written for
-# the pre-procd boot path ("no service restarts here"), so services keep their old
-# live config until the next reboot.
+# HOW TO RUN (from the laptop, one line — the < <(...) form is the LAPTOP's bash,
+# not the router's shell):
 #
-# Usage:  ssh root@<router> 'sh -s' < tg-router-health.sh
-#         (or scp it over and run it)
-# Exit:   0 = all checks pass, 1 = at least one FAIL.
+#   ssh root@tollgate.lan 'sh -s' < <(curl -fsSL https://raw.githubusercontent.com/felixfelix-bot/physical-router-test-automation/main/scripts/diag/tg-router-health.sh)
+#
+# or two steps, works everywhere:
+#   curl -fsSL <same url> -o /tmp/tg-router-health.sh
+#   ssh root@tollgate.lan 'sh -s' < /tmp/tg-router-health.sh
+#
+# DO NOT use `bash <(curl ...)` for this file: bash would EXECUTE the script on the
+# laptop and redirect its OUTPUT into the file you then send to the router.
+#
+# Exit: 0 = all checks pass, 1 = at least one FAIL.
 
 fail=0
-pass() { printf '  PASS  %s\n' "$*"; }
-bad()  { printf '  FAIL  %s\n' "$*"; fail=1; }
-info() { printf '  ----  %s\n' "$*"; }
-hdr()  { printf '\n=== %s ===\n' "$*"; }
+pass() { echo "  PASS  $*"; }
+bad()  { echo "  FAIL  $*"; fail=1; }
+info() { echo "  ----  $*"; }
+hdr()  { echo ""; echo "=== $* ==="; }
 
 hdr "identity"
-info "openwrt : $(. /etc/openwrt_release 2>/dev/null && echo "$DISTRIB_ID $DISTRIB_RELEASE ($DISTRIB_TARGET)")"
-info "uptime  : $(uptime 2>/dev/null | sed 's/^ *//')"
-V=$(apk list -I tollgate-wrt 2>/dev/null | head -1)
-[ -n "$V" ] || V=$(opkg list-installed tollgate-wrt 2>/dev/null)
-info "package : ${V:-NOT INSTALLED}"
-info "payload : $(sha256sum /usr/bin/tollgate-wrt 2>/dev/null | cut -c1-16)"
-[ -f /etc/tollgate/install.json ] && info "install.json: $(cat /etc/tollgate/install.json)" || info "install.json: absent"
+[ -r /etc/openwrt_release ] && . /etc/openwrt_release && info "openwrt : $DISTRIB_ID $DISTRIB_RELEASE ($DISTRIB_TARGET)"
+info "uptime  : $(uptime 2>/dev/null)"
+PKG=$(apk list -I tollgate-wrt 2>/dev/null | head -1)
+[ -n "$PKG" ] || PKG=$(opkg list-installed tollgate-wrt 2>/dev/null)
+info "package : ${PKG:-NOT INSTALLED}"
+info "payload sha256(16): $(sha256sum /usr/bin/tollgate-wrt 2>/dev/null | cut -c1-16)"
+[ -f /etc/tollgate/install.json ] && info "install.json: $(cat /etc/tollgate/install.json)"
 
-hdr "1. firewall guard chains (need a fw4 reload after install)"
+hdr "0. uci-defaults still present? (they self-delete after a successful boot run)"
+if [ -d /etc/uci-defaults ]; then
+    N=$(ls /etc/uci-defaults 2>/dev/null | wc -l)
+    info "/etc/uci-defaults holds $N script(s): $(ls /etc/uci-defaults 2>/dev/null | tr '\n' ' ')"
+    [ "$N" -eq 0 ] && info "(empty = both the install-time run and the boot run consumed them; the config they wrote is what you have now)"
+else
+    info "/etc/uci-defaults absent"
+fi
+[ -f /tmp/tollgate-setup.log ] && { echo "  ----  /tmp/tollgate-setup.log (last 25):"; tail -25 /tmp/tollgate-setup.log | sed 's/^/        /'; }
+
+hdr "1. firewall guard chains"
 if nft list chain inet fw4 nds_enforce_forward >/dev/null 2>&1; then
     pass "nds_enforce_forward exists"
     nft list chain inet fw4 nds_enforce_forward 2>/dev/null | grep -E 'counter|drop|reject|accept' | sed 's/^/        /'
 else
-    bad "nds_enforce_forward MISSING — /etc/nftables.d/20-nds-enforce.nft never loaded"
-    info "fix: /etc/init.d/firewall reload   (or reboot)"
+    bad "nds_enforce_forward MISSING (20-nds-enforce.nft not loaded)"
 fi
 for ch in admin_board_input_guard; do
-    if nft list chain inet fw4 $ch >/dev/null 2>&1; then pass "$ch exists"; else bad "$ch MISSING (31-admin-board-not-guest-reachable.nft not loaded)"; fi
+    if nft list chain inet fw4 "$ch" >/dev/null 2>&1; then pass "$ch exists"; else bad "$ch MISSING (31-admin-board-not-guest-reachable.nft not loaded)"; fi
 done
 
-hdr "2. nodogsplash interception (needed for OS captive-portal detection)"
-if pidof nodogsplash >/dev/null 2>&1; then pass "nodogsplash running"; else bad "nodogsplash NOT running — no HTTP interception ⇒ no OS portal detection"; fi
-NDCHAINS=$(nft list ruleset 2>/dev/null | grep -cE 'chain nds(OUT|RTR|PREROUTING|MASQ)')
-if [ "$NDCHAINS" -ge 1 ]; then pass "ND chains present ($NDCHAINS)"; else bad "no nds* chains — ND's redirect rules were never installed"; fi
-command -v ndsctl >/dev/null 2>&1 && { info "ndsctl status:"; ndsctl status 2>/dev/null | sed 's/^/        /' | head -20; }
+hdr "2. nodogsplash (needed for OS captive-portal detection)"
+NDPID=$(pidof nodogsplash 2>/dev/null)
+if [ -n "$NDPID" ]; then pass "nodogsplash running (pid $NDPID)"; else bad "nodogsplash NOT running -> no HTTP interception -> no OS portal detection"; fi
+info "uci enabled: $(uci -q get nodogsplash.@nodogsplash[0].enabled 2>/dev/null)"
+info "uci gatewayport: $(uci -q get nodogsplash.@nodogsplash[0].gatewayport 2>/dev/null)"
+NDC=$(nft list ruleset 2>/dev/null | grep -c 'nds')
+[ "$NDC" -ge 1 ] && pass "nds* rules/chain matches in ruleset: $NDC" || bad "no nds* chain in the live ruleset"
+if command -v ndsctl >/dev/null 2>&1; then echo "  ----  ndsctl status:"; ndsctl status 2>/dev/null | head -15 | sed 's/^/        /'; fi
 
-hdr "3. IPv6 on LAN (must be OFF — issue #148: Android validates over IPv6 and bypasses the portal)"
-RA=$(uci -q get dhcp.lan.ra 2>/dev/null); D6=$(uci -q get dhcp.lan.dhcpv6 2>/dev/null)
+hdr "3. IPv6 on LAN (must be off: #148 — Android validates over IPv6 and bypasses the portal)"
+RA=$(uci -q get dhcp.lan.ra 2>/dev/null)
+D6=$(uci -q get dhcp.lan.dhcpv6 2>/dev/null)
 info "uci dhcp.lan.ra=${RA:-unset} dhcpv6=${D6:-unset}"
-case "$RA" in disabled) pass "RA disabled in uci";; *) bad "RA=${RA:-unset} — if it is not 'disabled' the live config never applied";; esac
+[ "$RA" = "disabled" ] && pass "RA disabled in uci" || bad "RA=${RA:-unset} (expected disabled)"
 GLB=$(ip -6 addr show br-lan 2>/dev/null | grep -c 'scope global')
-[ "$GLB" -eq 0 ] && pass "no global IPv6 on br-lan" || bad "$GLB global IPv6 address(es) on br-lan — clients will get IPv6 and bypass the portal"
+[ "$GLB" -eq 0 ] && pass "no global IPv6 on br-lan" || bad "$GLB global IPv6 address(es) on br-lan — clients can bypass the portal over IPv6"
 
 hdr "4. uhttpd instances (:8090 admin board, :2051 portal, :8080 LuCI)"
-for s in admin portal main; do
-    H=$(uci -q get uhttpd.$s.home 2>/dev/null); L=$(uci -q get uhttpd.$s.listen_http 2>/dev/null | tr '\n' ' ')
-    [ -n "$H$L" ] && info "uhttpd.$s  home=${H:-unset}  listen_http=${L:-unset}" || info "uhttpd.$s  (absent)"
+for s in main admin portal net4sats; do
+    H=$(uci -q get "uhttpd.$s.home" 2>/dev/null)
+    L=$(uci -q get "uhttpd.$s.listen_http" 2>/dev/null | tr '\n' ' ')
+    if [ -n "$H$L" ]; then info "uhttpd.$s  home=${H:-unset}  listen_http=${L:-unset}"; else info "uhttpd.$s  (absent)"; fi
 done
-T8090=$(curl -s -m 5 http://127.0.0.1:8090/ 2>/dev/null | grep -o '<title>[^<]*</title>' | head -1)
+T8090=$(uclient-fetch -q -O - -T 5 http://127.0.0.1:8090/ 2>/dev/null | grep -o '<title>[^<]*</title>' | head -1)
+[ -n "$T8090" ] || T8090=$(wget -q -O - -T 5 http://127.0.0.1:8090/ 2>/dev/null | grep -o '<title>[^<]*</title>' | head -1)
+[ -n "$T8090" ] || T8090=$(curl -s -m 5 http://127.0.0.1:8090/ 2>/dev/null | grep -o '<title>[^<]*</title>' | head -1)
 case "$T8090" in
-  *LuCI*|*OpenWrt*) bad ":8090 serves LuCI ($T8090) — the admin instance is not live; expected the TollGate admin board";;
-  '') bad ":8090 did not answer (expected the TollGate admin board)";;
+  *LuCI*|*OpenWrt*) bad ":8090 serves LuCI ($T8090) — expected the TollGate admin board";;
+  "") bad ":8090 did not answer (expected the TollGate admin board)";;
   *) pass ":8090 serves $T8090";;
 esac
-if curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:2051/splash.html 2>/dev/null | grep -q '200\|403'; then
-    pass ":2051 answers (captive-portal SPA)"
-else
-    bad ":2051 dead — the portal uhttpd instance is not running"
-fi
+C2051=$(uclient-fetch -q -O /dev/null -T 5 http://127.0.0.1:2051/splash.html 2>/dev/null; echo $?)
+[ "$C2051" = "0" ] && pass ":2051 answers (captive-portal SPA)" || bad ":2051 did not answer"
 
 hdr "5. listening sockets"
-netstat -ltnp 2>/dev/null | grep -E ':(80|443|2050|2051|2121|8080|8090|8443)\b' | sed 's/^/        /'
+netstat -ltn 2>/dev/null | grep -E ':(22|80|443|2050|2051|2121|8080|8090|8443)[[:space:]]' | sed 's/^/        /'
 
 hdr "6. gateway service + wallet"
 /etc/init.d/tollgate-wrt status 2>/dev/null || info "tollgate-wrt has no status verb"
 info "wallet: $(tollgate wallet balance 2>&1 | head -3)"
 
-printf '\n=== verdict: %s ===\n' "$([ $fail -eq 0 ] && echo 'ALL CHECKS PASS' || echo 'FAILURES ABOVE')"
-printf 'Note: a FAIL that disappears after `reboot` proves the postinst-does-not-restart\n'
-printf 'defect (card t_12a2ab24). Report the PRE-reboot output — that is the real bug.\n'
+echo ""
+if [ "$fail" -eq 0 ]; then
+    echo "=== verdict: ALL CHECKS PASS ==="
+else
+    echo "=== verdict: FAILURES ABOVE ==="
+    echo "A FAIL that disappears after a reboot still proves the install-path defect."
+    echo "A FAIL that SURVIVES a reboot is the more interesting case: the config was never"
+    echo "written (not merely not applied) — report /etc/uci-defaults/ and /tmp/tollgate-setup.log."
+fi
 exit $fail
