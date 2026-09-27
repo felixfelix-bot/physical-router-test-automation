@@ -8,7 +8,7 @@
       - "'/dev/kvm' is exists"
       - cdk_mintd_bin is exists
       - openwrt_overlay is exists
-  fail_msg: "Missing /dev/kvm, {{ cdk_mintd_bin }}, or {{ openwrt_overlay }}"
+    fail_msg: "Missing /dev/kvm, {{ cdk_mintd_bin }}, or {{ openwrt_overlay }}"
 
 - name: Install qemu + helpers
   apt:

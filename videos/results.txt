@@ -1,0 +1,12 @@
+Step 1: Loading splash page at http://tollgate.lan/splash.html
+Step 2: Waiting for portal SPA to render
+Portal view rendered successfully
+Screenshot 01-splash.png saved
+Bare zero check: PASS (no bare zeros)
+Step 3: Checking Cashu payment tab
+Cashu tab not visible, checking all tabs
+Step 4: Checking Lightning payment tab
+Step 5: Checking gateway API
+Gateway API response: {"kind":10021,"id":"53c8d5c99e9e8247cb23e53098e62de6028ea25e8ce91b3693d49b735cd86e57","pubkey":"cfce93a3d4a07592124240918e1a148a227b59101ead2c04ebdd398a64c2d6b4","created_at":0,"tags":[["metric","byte
+Final screenshot saved
+VIDEO RECORDING COMPLETE - All steps passed
