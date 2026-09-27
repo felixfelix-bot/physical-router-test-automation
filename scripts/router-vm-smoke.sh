@@ -29,11 +29,25 @@ esac
 source "$HOME/.tollgate-test-venv/bin/activate" 2>/dev/null || true
 mkdir -p results
 
-cleanup() { python3 scripts/virtual-lab.py stop-poc --host localhost || true; }
+RPC_PID=""
+cleanup() {
+  [ -n "$RPC_PID" ] && kill "$RPC_PID" 2>/dev/null || true
+  python3 scripts/virtual-lab.py stop-poc --host localhost || true
+}
 trap cleanup EXIT
 
 python3 scripts/virtual-lab.py start-poc --host localhost --backend "$BACKEND" \
   || python3 scripts/virtual-lab.py start-poc --host localhost
+
+# npub-gated issuance RPC (deliberate auth bypass). Whitelisted npubs may mark a
+# quote paid / receive test e-cash; everyone else is rejected (NIP-98 proof).
+if [ -f scripts/mint_allowlist_rpc.py ]; then
+  MINT_ALLOWLIST_CONFIG="${MINT_ALLOWLIST_CONFIG:-configs/mint_allowlist.example.json}" \
+  MINT_ALLOWLIST_PORT="${MINT_ALLOWLIST_PORT:-8391}" \
+  MINT_ADMIN_URL="${MINT_ADMIN_URL:-}" \
+    python3 scripts/mint_allowlist_rpc.py >/tmp/mint-allowlist-rpc.log 2>&1 &
+  RPC_PID=$!
+fi
 
 if [ -n "$MARK" ]; then
   python3 -m pytest -m "$MARK" tests/api -q --junitxml results/junit.xml
