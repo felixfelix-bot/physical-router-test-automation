@@ -1958,6 +1958,88 @@ in the spirit of `fix_nodogsplash_dhcp()`.
 - `tests/browser/tollgate-portal-lightning.spec.mjs` — hardware regression for
   the Lightning capability probe + balance page.
 
+Environment traps found while verifying:
+- **neverssl.com is TCP-blocked from this network** (ICMP passes) — a
+  connectivity probe must be IP-literal (1.1.1.1 serves HTTP 301) and must
+  NOT use `-L`: its redirect target needs DNS, and DNS-through-NDS is
+  governed by `users_to_router`, which allows **tcp/53 only** — UDP DNS from
+  a gated client fails. The Debian client's steady-state resolver must be
+  the router (cloud-init's 10.99.99.2 default only answers during
+  provisioning; its resolv.conf is a symlink — `rm` it before writing).
+- **Backend rate limit (tmbg#88)**: post-merge-14 wraps the payment root in
+  `RateLimitMiddleware` — 10 req/min per client IP. Suite payment cadence +
+  reruns trip it (`kind 21023` / `rate limit exceeded`); absent in
+  post-merge-12. Env knob `TOLLGATE_RATE_LIMIT_RPM` exists but is not
+  persistable through the init script.
+- **reveal-seed is a derivation oracle now** (recontracted 2026-09-06, PRTA
+  #102): `POST /identity/reveal-seed` takes a raw 12-word BIP39 mnemonic as
+  the body (not JSON) and returns the identity derived from it — it no longer
+  reveals the stored seed. Empty/garbage body → 400 `invalid mnemonic`;
+  GET → 405; non-loopback → 403. Passwords are v2-format: six lowercase
+  BIP39 words hyphen-joined (the Nato-Nato-Nato-NN regexes are stale).
+  `tests/api/test_pr193_identity_endpoints.py` pins the full contract. (Also:
+  CORS hardening 415s busybox wget's form content-type on the payment root —
+  use curl with an explicit content-type.)
+- **OpenWrt deletes uci-defaults scripts after execution** — post-boot
+  firmware legitimately has no `/etc/uci-defaults/99-tollgate-setup`; tests
+  must presence-guard.
+- The documented signal-timeout hang class struck again
+  (`test_startup_mint_recovery_latency` >10 min past `--timeout=180`); kill
+  + rerun the remainder is still the only recourse.
+
+## User-Story Test Architecture (2026-09-27)
+
+PRTA is the **authoritative test suite** — the single point of authority on
+expected TollGate behavior across all implementations (Go, Rust, NR7101,
+ESP32). Cross-implementation drift is caught by running the same user
+stories against every device.
+
+### Key Files
+
+- `config/behavior-contract.json` — versioned expected-behavior registry
+- `lib/contract.py` — helpers for reading the contract from tests
+- `tests/stories/` — device-agnostic user-story tests
+- `tests/stories/conftest.py` — ClientDevice protocol + adapters
+- `lib/clients/ssid.py` — SSID auto-resolution from router
+- `lib/labgrid_topology.py` — virtual topology manager (bridges, hwsim, QEMU)
+- `config/labgrid-env.yaml` — labgrid targets for all rig devices
+
+### Running Stories
+
+```bash
+# All stories
+make pytest-stories
+
+# Individual stories
+make pytest-story-pay        # user pays and gets internet
+make pytest-story-expiry     # session expiry and repayment
+make pytest-story-degraded   # degraded mode resilience
+
+# With env vars
+TOLLGATE_SSH_HOST=192.168.13.124 \
+TOLLGATE_SSID=TollGate \
+PHONE_SERIAL=ZY326DPC7R \
+TOLLGATE_TEST_MINT_URL=http://192.168.13.221:8383 \
+pytest tests/stories/ --no-deploy --timeout-method=signal -v
+```
+
+### Labgrid Infrastructure
+
+Coordinator runs on `192.168.13.208:20408` (ai-legion). Places:
+- `android-test` — phone mutex (AndroidADDDevice, serial ZY326DPC7R)
+- `nr7101-router` — NR7101 router (NetworkService)
+- `tollgate-s3-hil` — ESP32 S3 HIL (existing)
+
+Exporters: `ai-legion-small-rig` (phone), `ai-legion-small-microfips` (ESP32s).
+
+### Design Principles
+
+1. User stories, not implementation tests — "user joins, pays, gets internet"
+2. Film well — every test produces video + screenshots + vision validation
+3. Contract JSON — behavior changes are visible in the diff
+4. Cross-implementation matrix — same story, different devices
+5. DRY — one test file per story, parameterized across devices
+
 ### Two root causes for the Lightning flow (both bit us)
 
 1. **Mint generation must match the backend wallet.** The Go backend's Cashu
@@ -1972,3 +2054,66 @@ in the spirit of `fix_nodogsplash_dhcp()`.
 
 Also: `wallet.db` caches mint URLs, so delete it after changing mints; use
 `scp -O` for OpenWrt.
+
+## Lessons Learned — v0.6 Release-Kit Session (2026-09-27)
+
+Four test-rail root causes from building the release kit against NR7101
+(tollgate-wrt v0.6.0-alpha4, Android 15 moto g(7) bench phone):
+
+1. **A stale firewall mark masqueraded as a "backend session keeper".**
+   `no_session` deauthed the phone yet internet persisted; the backend was
+   blamed for re-authenticating a live session — even a backend restart
+   "didn't help". Truth: a per-client `iptables -t mangle ... ndsOUT ...
+   MARK --set-xmark 0x20000/0x20000` rule (the NDS 5.0.2 auth-mark
+   workaround class) that `ndsctl deauth` does not track. NDS showed
+   `State: Preauthenticated` while the mark kept the gate open. Diagnosis:
+   compare `ndsctl status | grep <mac>` with `iptables -t mangle -S ndsOUT
+   | grep <mac>`. `tests/stories/conftest.py:_deauth_device()` now removes
+   those rules on every deauth.
+
+   **Resolved 2026-09-28 — not a firmware bug.** The Go backend has no
+   iptables code (its ipk ships only an nft enforcement bridge that READS
+   marks). The stale rule was PRTA's own old workaround
+   (`fix_nds_auth_mark_rules`: in-place `-R` rewrite to `--or-mark 0x20000`),
+   which `ndsctl deauth` cannot remove — NDS deletes only the exact rule
+   it inserted. Bench-proven on the local-lab VM: auth → rewrite → deauth
+   leaves the rule behind; without the rewrite, deauth cleans up. The
+   repair was redesigned (606fb23) to insert one client-agnostic ndsNET
+   accept rule instead — no leak. `remove_nds_auth_mark_rules`
+   (lib/router.py, wired into `reset_state`) sweeps rules leaked by the
+   old approach. No upstream issue warranted.
+
+2. **The global `--timeout=60` killed phone-driving stories.** Story tests
+   carry `slow`, not `phone`, so the pytest.ini cap applied — a wifi-cycle
+   revalidation nudge alone runs 40s. The mid-flow kill also wedged the
+   phone and contaminated the NEXT test (join failure). `tests/stories/
+   conftest.py` now stamps `timeout(300)` on every collected story via
+   `pytest_collection_modifyitems`. Rule: any test that drives the phone
+   needs phone-tier timeouts regardless of its marker.
+
+3. **The Android supplicant can wedge after an interrupted wifi-cycle.**
+   Symptom: WiFi ON but DISCONNECTED with zero association attempts
+   reaching the AP — visible in hostapd `logread`, not in dumpsys. A radio
+   toggle (`svc wifi disable` → `svc wifi enable`) resets it. `join_wifi`
+   now retries once through a toggle before giving up.
+
+4. **Concurrent lanes clobber shared-file edits.** A replaceAll routing fix
+   in conftest.py was partially overwritten by another session's fixture
+   edit written from a stale view; the loss surfaced only as a
+   wrong-device skip two runs later. After any concurrent commit lands in
+   the shared tree, re-grep for the old pattern to confirm every site
+   still holds your change.
+
+Readiness ≠ liveness struck again: a "V4 mint broken" verdict was a
+transient mint hiccup — `/v1/info` stayed green, a manual cdk-cli repro
+minted fine, and the test had swallowed the mint-step stderr entirely.
+`_mint_v4_token` now retries once and surfaces both subprocess stderrs.
+
+Release kit: `scripts/release-test.sh --version X --router IP --ipk F.ipk`
+(labgrid lock → scp+opkg flash → story suite → portal tab-copy → markdown
+report). First v0.6.0-alpha4 baselines: payment **0.71s end-to-end**
+(mint 0.06 / submit 0.58 / auth-wait 0.07), portal load 13ms, backend
+response 682ms. Upgrade-path story activates with `TOLLGATE_RELEASE_IPK`;
+concurrent-payment story with `TOLLGATE_DEBIAN_HOST`. Cross-implementation
+client routing: `TOLLGATE_STORY_CLIENT=debian-vm|omarchy-vm|android-phone`.
+
