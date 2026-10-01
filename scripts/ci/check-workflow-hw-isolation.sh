@@ -88,15 +88,18 @@ HW_ENVIRONMENT_NAME="${HW_ENVIRONMENT_NAME:-bench-hardware}"
 HW_RUNNER_LABELS_EXTRA="${HW_RUNNER_LABELS_EXTRA:-}"
 HW_TRIGGER_WHITELIST="workflow_dispatch schedule"
 # Files (basenames) that may legitimately run on a DIFFERENT self-hosted fleet
-# (i.e. not the bench). They are reported as an explicit exception on every run,
-# never silently skipped. R6 still rejects unverifiable `runs-on` targets in
-# them. Default: cloud-lab-runner.yml targets the ephemeral GCP `cloud-lab` VM.
-HW_NON_BENCH_SELF_HOSTED_ALLOW="${HW_NON_BENCH_SELF_HOSTED_ALLOW:-cloud-lab-runner.yml}"
+# (i.e. not the bench). They are reported as an explicit exception on every
+# run, never silently skipped. R6 still rejects unverifiable `runs-on` targets
+# in them. Default: cloud-lab-runner.yml targets the ephemeral GCP `cloud-lab`
+# VM; router-vm-lab.yml targets the LXD lab host (`openwrt-qemu` fleet) — the
+# runner there restores a snapshot and executes the suite inside the VM, so it
+# is a lab orchestrator, not the physical bench.
+HW_NON_BENCH_SELF_HOSTED_ALLOW="${HW_NON_BENCH_SELF_HOSTED_ALLOW:-cloud-lab-runner.yml router-vm-lab.yml}"
 # Labels that identify a DIFFERENT self-hosted fleet. `self-hosted` on its own is
 # not a fleet — it matches EVERY self-hosted runner, the bench's included — so an
 # allowlisted file may only be excused for it on a `runs-on` line that also names
 # one of these (round-6 review Y1).
-HW_NON_BENCH_FLEET_LABELS="${HW_NON_BENCH_FLEET_LABELS:-cloud-lab}"
+HW_NON_BENCH_FLEET_LABELS="${HW_NON_BENCH_FLEET_LABELS:-cloud-lab openwrt-qemu}"
 # Bench-specific labels denied even when the hardware workflow stops declaring
 # them. Derived sets live in files a PR controls, so the floor is hardcoded: a PR
 # cannot shrink the denied set by respelling hw-smoke.yml's runner target
