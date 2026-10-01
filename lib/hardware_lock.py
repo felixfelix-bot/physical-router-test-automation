@@ -2,6 +2,13 @@
 
 Backward compatible: existing imports (from lib.hardware_lock import ...)
 continue to work.
+
+PRTA-REVIVE note: when tollgate_lab is NOT installed, this module now
+delegates to the ONE machine-global bench lease (``lib.bench_lock.BenchLock``
+via the ``scripts/hw-bench-lease`` CLI surface) instead of writing its own
+/tmp JSON lock. The old /tmp lock was one of three inconsistent mechanisms
+that could not stop two agents on two worktrees from driving the same router;
+the bench lease is a single flock every surface shares.
 """
 
 try:
@@ -13,88 +20,59 @@ try:
         read_hardware_lock,
     )
 except ImportError:
-    # Fallback: keep the original implementation for standalone operation
-    # The tollgate_lab version is the canonical one
-    import os, json, platform, subprocess, tempfile
-    from datetime import datetime, timezone, timedelta
-    from pathlib import Path
-    from lib.router_lock import _STALE_THRESHOLD
+    # Delegate to the machine-global bench lease (lib.bench_lock). BenchBusy
+    # and BenchStale are RuntimeError subclasses, so callers that catch
+    # RuntimeError (tests/conftest.py does) keep working unchanged.
+    import json
 
-    _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-    _SESSION_ID = os.environ.get("GITHUB_RUN_ID", os.environ.get("USER", "unknown"))
-    HARDWARE_LOCK = Path(tempfile.gettempdir()) / "tollgate_hardware.lock"
+    from lib.bench_lock import BenchLock, Holder, bench_state, read_holder
 
-    def _session_id():
-        return _SESSION_ID
+    _held_lock: BenchLock | None = None
 
-    def _git_branch():
-        try:
-            return subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=_PROJECT_ROOT, text=True, timeout=5
-            ).strip()
-        except Exception:
-            return "unknown"
+    def _holder_dict(holder: Holder) -> dict:
+        return {
+            "session_id": holder.profile or "unknown",
+            "git_branch": "",
+            "timestamp": holder.since or "",
+            "phase": holder.purpose or "",
+            "hostname": holder.host or "",
+            "task": holder.task or "",
+            "pid": holder.pid or "",
+            "locked": bench_state() == "held",
+        }
 
     def read_hardware_lock():
-        if not HARDWARE_LOCK.exists():
+        holder = read_holder()
+        if holder.is_empty:
             return None
-        try:
-            return json.loads(HARDWARE_LOCK.read_text())
-        except Exception:
-            return None
+        return _holder_dict(holder)
 
     def is_hardware_locked():
-        data = read_hardware_lock()
-        if not data:
-            return False
-        if str(data.get("locked", "true")).lower() == "false":
-            return False
-        return not _is_stale(data)
-
-    def _is_stale(data):
-        try:
-            ts = datetime.fromisoformat(data.get("timestamp", "2000-01-01T00:00:00+00:00"))
-        except (TypeError, ValueError):
-            return True
-        return datetime.now(timezone.utc) - ts > _STALE_THRESHOLD
+        return bench_state() == "held"
 
     def require_hardware_lock():
         if not is_hardware_locked():
-            raise RuntimeError("Hardware not locked. Run acquire_hardware_lock first.")
+            raise RuntimeError(
+                "Hardware not locked. Take the machine-global bench lease first: "
+                "`make lock PHASE=\"description\"` or "
+                "`scripts/hw-bench-lease exec --purpose <p> -- <cmd>`."
+            )
 
     def acquire_hardware_lock(phase="acquired"):
-        data = {
-            "session_id": _session_id(),
-            "git_branch": _git_branch(),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "phase": phase,
-            "hostname": platform.node(),
-        }
-        HARDWARE_LOCK.write_text(json.dumps(data, indent=2))
+        global _held_lock
+        if _held_lock is not None:
+            return
+        lock = BenchLock(purpose=phase)
+        lock.acquire()
+        _held_lock = lock
 
     def release_hardware_lock():
-        if HARDWARE_LOCK.exists():
-            HARDWARE_LOCK.unlink()
+        global _held_lock
+        if _held_lock is None:
+            return
+        _held_lock.release()
+        _held_lock = None
 
-# Ensure HARDWARE_LOCK and _is_stale are always available, even when
-# tollgate_lab is installed (it doesn't export these names).
-import tempfile as _tempfile
-from pathlib import Path as _Path
-from datetime import datetime, timezone as _tz, timedelta as _td
-
-try:
-    HARDWARE_LOCK
-except NameError:
-    HARDWARE_LOCK = _Path(_tempfile.gettempdir()) / "tollgate_hardware.lock"
-
-try:
-    _is_stale
-except NameError:
-    def _is_stale(data):
-        from lib.router_lock import _STALE_THRESHOLD
-        try:
-            ts = datetime.fromisoformat(data.get("timestamp", "2000-01-01T00:00:00+00:00"))
-        except (TypeError, ValueError):
-            return True
-        return datetime.now(_tz.utc) - ts > _STALE_THRESHOLD
+    def _dump_holder_json() -> str:
+        holder = read_holder()
+        return json.dumps(_holder_dict(holder), indent=2)
