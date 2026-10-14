@@ -1374,6 +1374,19 @@ def install_tollgate(args: argparse.Namespace) -> int:
         print("       Build or fetch a tollgate-wrt x86_64 .apk first.", file=sys.stderr)
         return 2
 
+    # Stage a copy under <workdir>/artifacts so the lab dir is self-describing and
+    # a later run needs no --artifact at all.
+    try:
+        import shutil
+        adir = os.path.expanduser(os.path.join(workdir, "artifacts"))
+        os.makedirs(adir, exist_ok=True)
+        dest = os.path.join(adir, os.path.basename(artifact))
+        if os.path.abspath(dest) != os.path.abspath(artifact):
+            shutil.copy2(artifact, dest)
+            print(f"staged artifact copy: {dest}")
+    except OSError as e:
+        print(f"warning: could not stage artifact copy ({e})", file=sys.stderr)
+
     sha = hashlib.sha256()
     with open(artifact, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):

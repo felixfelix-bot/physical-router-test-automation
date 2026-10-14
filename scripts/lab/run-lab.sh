@@ -47,6 +47,23 @@ fi
 log() { printf '[lab] %s\n' "$*"; }
 die() { printf '[lab] ERROR: %s\n' "$*" >&2; exit 1; }
 
+# The router's SSH is the only liveness signal we need, and the MT3000/VM drops
+# ICMP, so probe TCP rather than ping.
+tcping_host() {
+  local host="${1:-${LAB_ROUTER:-10.99.99.1}}" port="${2:-22}"
+  timeout 5 bash -c "cat < /dev/null > /dev/tcp/${host}/${port}" 2>/dev/null
+}
+tcping_router() { tcping_host "${LAB_ROUTER:-10.99.99.1}" 22; }
+
+wait_for_router() {
+  local deadline=$(( $(date +%s) + ${1:-180} ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    tcping_router && return 0
+    sleep 3
+  done
+  return 1
+}
+
 require_quiet_host() {
   [ "${LAB_QUIET:-1}" = "1" ] || return 0
   local load1 cores
@@ -61,7 +78,9 @@ require_quiet_host() {
 
 cmd_up() {
   require_quiet_host
-  [ -x "$VL" ] || die "missing $VL"
+  # -f, not -x: virtual-lab.py is invoked as `python3 <file>` and may legitimately
+  # lack the exec bit in a fresh checkout.
+  [ -f "$VL" ] || die "missing $VL"
 
   log "1/5 host readiness"
   "$PY" "$VL" doctor --host localhost || log "doctor reported issues (continuing)"
@@ -71,7 +90,19 @@ cmd_up() {
     --workdir "$LAB_DIR"
 
   log "3/5 boot router VM + provision addressing plan"
-  "$PY" "$VL" start-poc --host localhost --workdir "$LAB_DIR"
+  # The router VM is the component under test. start-poc also tries to boot a
+  # Debian client VM, but that needs a separately-prepared image and is not
+  # required to prove the router: the smoke gate drives :2121 from the host.
+  # Treat a client-boot failure as a warning so the rail works on a host that
+  # only has the OpenWrt image.
+  if ! "$PY" "$VL" start-poc --host localhost --workdir "$LAB_DIR"; then
+    log "WARNING: start-poc reported a client-VM problem; continuing with the router"
+    log "         (run 'prepare-debian' then 'start-poc' again to add the client VM)"
+    # The router may still be up — confirm before proceeding.
+    if ! tcping_router; then
+      die "router VM did not come up; see $LAB_DIR/logs/serial.log"
+    fi
+  fi
 
   log "4/5 install tollgate-wrt"
   "$PY" "$VL" install-tollgate --host localhost --workdir "$LAB_DIR" \
