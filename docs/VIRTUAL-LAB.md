@@ -77,6 +77,21 @@ scripts/lab/run-lab.sh status    # what's running + :2121 code
 scripts/lab/run-lab.sh down      # tear down VMs, bridge, mint
 ```
 
+Or through the Makefile (same thing, repo convention):
+
+```bash
+make lab-up        # boot + install + verify
+make lab-smoke     # the smoke gate
+make lab-verify    # re-assert :2121 answers kind:10021
+make lab-purchase  # one purchase (read the rail status first!)
+make lab-status    # what's running
+make lab-down      # tear down
+```
+
+These targets deliberately do **not** take the physical hardware lock, unlike the
+`test-*` bench targets: this lane is virtual, so holding the bench lock would
+serialize virtual work behind hardware for no reason.
+
 `up` refuses to run when the host is loaded above ~80% of its core count
 (`LAB_QUIET=0` to override). A lab booted under heavy load produces timeout
 failures that read like product failures, so the gate is deliberate.
