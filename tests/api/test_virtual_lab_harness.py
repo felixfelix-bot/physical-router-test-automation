@@ -25,7 +25,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_LAB = REPO_ROOT / "scripts" / "lab" / "run-lab.sh"
 VIRTUAL_LAB = REPO_ROOT / "scripts" / "virtual-lab.py"
 
-pytestmark = [pytest.mark.unit]
+# `api` because these need neither a phone nor hardware; NOT `virtual_lab_only`,
+# which conftest would skip unless TOLLGATE_LAB_TYPE=virtual-lab — these must run
+# everywhere, since they are the only automated check on the harness itself.
+pytestmark = [pytest.mark.api, pytest.mark.virtual_lab]
 
 
 def _read(path: Path) -> str:
@@ -123,13 +126,21 @@ def test_artifact_glob_matches_real_release_name():
 def test_smoke_gate_fails_closed_when_api_absent():
     """Pointed at a dead address the gate must FAIL, not skip or pass.
 
-    This is the negative control for the whole rail: if this ever passes, the
-    smoke gate has stopped being a gate.
+    This is the negative control for the whole rail: if this ever passes (or
+    skips), the smoke gate has stopped being a gate.
+
+    TRAP (measured): `tests/conftest.py` MUTATES os.environ, defaulting
+    TOLLGATE_LAB_TYPE to \"physical\" when no lab type is given. Because conftest
+    checks TOLLGATE_LAB_TYPE *before* TOLLGATE_VIRTUAL_LAB, a nested pytest run
+    inheriting that leaked value sees lab_type=physical and SKIPS every
+    virtual_lab_only test — a silent pass. Set TOLLGATE_LAB_TYPE explicitly so
+    the control is deterministic.
     """
     env = dict(os.environ)
     env.update({
+        "TOLLGATE_LAB_TYPE": "virtual-lab",       # beat the leaked default
         "TOLLGATE_VIRTUAL_LAB": "1",
-        "TOLLGATE_VIRTUAL_GATEWAY": "127.0.0.1",   # nothing listens on :2121 here
+        "TOLLGATE_VIRTUAL_GATEWAY": "127.0.0.1",  # nothing listens on :2121 here
         "TOLLGATE_LAB_READY_TIMEOUT": "3",
     })
     r = subprocess.run(
@@ -140,6 +151,9 @@ def test_smoke_gate_fails_closed_when_api_absent():
     )
     out = r.stdout + r.stderr
     assert r.returncode != 0, f"smoke gate PASSED against a dead address:\n{out}"
+    assert "skipped" not in out, (
+        f"smoke gate SKIPPED instead of failing — a skipped gate proves nothing:\n{out}"
+    )
     assert "never became reachable" in out, (
         f"expected the actionable not-reachable message, got:\n{out}"
     )
