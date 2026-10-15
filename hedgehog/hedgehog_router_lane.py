@@ -283,14 +283,38 @@ def main():
                         "PASS" if n > 0 else "FAIL",
                         f"{n} taproot-related symbols")
 
+                # If the verifier is on the device, RUN it -- a file-existence
+                # check would pass on a binary that cannot execute. Anywhere we
+                # look, not just /usr/bin: the deploy path drops it in /tmp.
                 has_bin = count_via_file(
-                    conn, "ls /usr/bin | grep -ci hedgehog") > 0
-                res.add("hedgehog verifier binary on the router",
-                        "PASS" if has_bin else "SKIP",
-                        "present" if has_bin else
-                        "not cross-compiled for aarch64; the verifier is "
-                        "validated in-process on the bench. Named prerequisite: "
-                        "GOOS=linux GOARCH=arm64 build + flash")
+                    conn, "ls /tmp/hv /usr/bin/hv /usr/bin/hedgehog-verify "
+                          "2>/dev/null | wc -l") > 0
+                if has_bin:
+                    # Malformed input must exit 2 with structured JSON: that proves
+                    # the binary EXECUTES and honours its exit-code contract, which
+                    # mere presence does not.
+                    conn.exec_command(
+                        "printf '%s' '{\"tx_hex\":\"00\",\"prev_script\":\"00\"}'"
+                        " > /tmp/.hh_vreq", timeout=30)
+                    conn.exec_command(
+                        "sh -c '/tmp/hv /tmp/.hh_vreq > /tmp/.hh_vout 2>&1; "
+                        "echo $? > /tmp/.hh_vrc' || true", timeout=90)
+                    vrc = run_file(conn, "cat /tmp/.hh_vrc")
+                    vout = run_file(conn, "cat /tmp/.hh_vout")
+                    code_ok = "2" in (vrc or "")
+                    json_ok = "valid" in (vout or "")
+                    res.add("hedgehog verifier runs on the router",
+                            "PASS" if (code_ok and json_ok) else "FAIL",
+                            f"exit {vrc.strip()} on malformed input, "
+                            f"JSON={'yes' if json_ok else 'no'} -- executes and "
+                            f"honours its exit-code contract"
+                            if (code_ok and json_ok)
+                            else f"exit={vrc.strip()!r} out={vout.strip()[:80]!r}")
+                else:
+                    res.add("hedgehog verifier on the router", "SKIP",
+                            "not deployed. Named prerequisite: cross-compile with "
+                            "GOOS=linux GOARCH=arm64 and fetch it over HTTP "
+                            "(the serial console is too slow for ~5 MB)")
 
                 # ------------------------------------------------ C. csv watch
                 print()
