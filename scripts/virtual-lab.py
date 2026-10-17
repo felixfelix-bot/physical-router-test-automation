@@ -52,6 +52,90 @@ APT_PACKAGES = [
 ]
 
 DEFAULT_OPENWRT_VERSION = "24.10.1"
+
+# Image profiles for the VM lab (PRTA-VM-LAB-LOCAL). A profile key pins a
+# concrete point release and a dedicated base image so multiple OpenWrt lines
+# can coexist in one workdir — the feed ships 25.12-line .apks, so the lab
+# needs a 25.12 VM next to the pinned 24.10.1 one. The 24.10.1 profile keeps
+# the legacy unversioned base name (openwrt-base.qcow2) so existing lab
+# installs and overlays keep working unchanged.
+#
+# Image variant for both profiles: ``x86-64-generic-ext4-combined.img.gz``
+# (BIOS/legacy boot, ext4 combined) from
+# ``https://downloads.openwrt.org/releases/<version>/targets/x86/64/``.
+#
+# ``sha256_gz`` is the published digest of that ``.img.gz``, copied from the
+# release's ``sha256sums`` file on 2026-10-17.  NOTE: ``prepare_image`` does
+# NOT verify it — the pinned 24.10.1 profile has never done a checksum check
+# (it only curls + gunzips), so 25.12 follows the same pattern rather than
+# silently diverging.  The digests are recorded here so a future task can
+# turn verification on for every profile at once; ``profiles`` prints them.
+OPENWRT_IMAGE_PROFILES: dict[str, dict[str, str]] = {
+    "24.10.1": {
+        "version": "24.10.1",
+        "base": "openwrt-base.qcow2",
+        "sha256_gz": "924e4b83a34d600914841d53df51bba930d4a56070032a30cba5bca87273c213",
+    },
+    "25.12": {
+        "version": "25.12.5",
+        "base": "openwrt-base-25.12.5.qcow2",
+        "sha256_gz": "23e2538e8ab0eb52dfed1c65d608ecdb71ffd432dd54885da138ae67cd9e4461",
+    },
+}
+
+OPENWRT_IMAGE_VARIANT = "x86-64-generic-ext4-combined"
+OPENWRT_RELEASE_BASE_URL = "https://downloads.openwrt.org/releases"
+
+
+def resolve_openwrt_profile(name: str) -> tuple[str, str]:
+    """Map a ``--openwrt-version`` value to ``(point release, base qcow2 name)``.
+
+    Accepts either a profile key (``"25.12"``) or an exact version
+    (``"25.12.5"``, ``"24.10.2"``). Exact versions that are not profile keys
+    get their own dedicated base image instead of clobbering the legacy
+    ``openwrt-base.qcow2`` used by the pinned 24.10.1 profile.
+    """
+    profile = OPENWRT_IMAGE_PROFILES.get(name)
+    if profile is not None:
+        return profile["version"], profile["base"]
+    return name, f"openwrt-base-{name}.qcow2"
+
+
+def default_openwrt_profile() -> str:
+    """Profile used when the caller does not select one explicitly.
+
+    ``TOLLGATE_VLAB_OPENWRT`` (e.g. ``25.12``) lets an env-driven caller — the
+    ``LocalKVMProvider`` seam exports it — pick a line without a CLI flag.
+    Unset/blank keeps the pinned ``24.10.1`` default, so every existing
+    invocation resolves exactly as before.
+    """
+    return os.environ.get("TOLLGATE_VLAB_OPENWRT") or DEFAULT_OPENWRT_VERSION
+
+
+def profile_config(name: str) -> dict[str, str]:
+    """Fully resolved config for one profile key or exact version."""
+    version, base = resolve_openwrt_profile(name)
+    image = f"openwrt-{version}-{OPENWRT_IMAGE_VARIANT}.img"
+    sha = OPENWRT_IMAGE_PROFILES.get(name, {}).get("sha256_gz") or version_sha256(version)
+    return {
+        "requested": name,
+        "version": version,
+        "base_qcow2": base,
+        "image": image,
+        "url": f"{OPENWRT_RELEASE_BASE_URL}/{version}/targets/x86/64/{image}.gz",
+        "sha256_gz": sha or "unknown",
+        "checksum_enforced": "no",
+    }
+
+
+def version_sha256(version: str) -> str | None:
+    """Published sha256 of the ``.img.gz`` for an exact version, if recorded."""
+    for profile in OPENWRT_IMAGE_PROFILES.values():
+        if profile["version"] == version:
+            return profile.get("sha256_gz")
+    return None
+
+
 DEFAULT_WORKDIR = "~/tollgate-virtual-lab"
 POC_BRIDGE = "tg-poc-br"
 POC_TAP = "tg-poc-tap"
@@ -160,7 +244,13 @@ import socket, time, sys, os
 
 SOCK_PATH = os.path.expanduser('__WORKDIR__') + '/run/serial.sock'
 PASSWORD = '__PASSWORD__'
-BOOT_TIMEOUT = 60
+# Boot budgets sized for a busy lab host (DQ05-class): the serial chardev
+# socket appears ~17s after QEMU launch and boot-to-prompt measured 40-110s+
+# under load. 60s connect window / 180s boot window keep provisioning off
+# the flaky edge; the caller's subprocess timeout must cover both plus the
+# ~20 serial commands (~2-5s each).
+SOCKET_TIMEOUT = 60
+BOOT_TIMEOUT = 180
 
 def recv_all(s, timeout=5):
     s.settimeout(timeout)
@@ -182,7 +272,7 @@ def send_and_wait(s, cmd, wait=3):
 
 # Connect to serial console (retry until socket appears)
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-deadline = time.time() + 30
+deadline = time.time() + SOCKET_TIMEOUT
 connected = False
 while time.time() < deadline:
     try:
@@ -280,6 +370,7 @@ import socket, time, sys, os
 
 SOCK_PATH = os.path.expanduser('__WORKDIR__') + '/run/serial-client.sock'
 PASSWORD = '__PASSWORD__'
+SOCKET_TIMEOUT = 60
 BOOT_TIMEOUT = 120
 
 def recv_all(s, timeout=5):
@@ -302,7 +393,7 @@ def send_and_wait(s, cmd, wait=3):
 
 # Connect to serial console (retry until socket appears)
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-deadline = time.time() + 30
+deadline = time.time() + SOCKET_TIMEOUT
 connected = False
 while time.time() < deadline:
     try:
@@ -407,13 +498,21 @@ class CommandResult:
 
 
 def run_local(command: list[str], timeout: int = 30) -> CommandResult:
-    proc = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        # Mirror run_remote's local branch: translate timeouts into a failed
+        # CommandResult so callers fall back gracefully (e.g. start-poc's
+        # client SSH probe falls through to serial provisioning) instead of
+        # crashing with TimeoutExpired on a busy lab host.
+        print(f"TIMEOUT running {' '.join(command[:4])}", file=sys.stderr, flush=True)
+        return CommandResult(1, "", "TIMEOUT")
     return CommandResult(proc.returncode, proc.stdout.strip(), proc.stderr.strip())
 
 
@@ -562,14 +661,44 @@ def install_deps(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def print_profiles(args: argparse.Namespace) -> int:
+    """Print the resolved image config for every profile without downloading.
+
+    This is the config/dry-run path: no SSH, no QEMU, no image download.  The
+    default line shows what an unspecified invocation would resolve to.
+    """
+    import json
+
+    selected = cast(str | None, getattr(args, "openwrt_version", None))
+    default_name = default_openwrt_profile()
+    payload = {
+        "default_profile": default_name,
+        "default_source": (
+            "env:TOLLGATE_VLAB_OPENWRT"
+            if os.environ.get("TOLLGATE_VLAB_OPENWRT")
+            else "built-in DEFAULT_OPENWRT_VERSION"
+        ),
+        "profiles": {
+            name: profile_config(name)
+            for name in OPENWRT_IMAGE_PROFILES
+        },
+    }
+    if selected:
+        payload["resolved"] = profile_config(selected)
+    else:
+        payload["resolved"] = profile_config(default_name)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def prepare_image(args: argparse.Namespace) -> int:
     host = cast(str, args.host)
-    version = cast(str, args.openwrt_version)
+    version, base_qcow2 = resolve_openwrt_profile(cast(str, args.openwrt_version))
     workdir = cast(str, args.workdir)
-    image_name = f"openwrt-{version}-x86-64-generic-ext4-combined.img"
+    image_name = f"openwrt-{version}-{OPENWRT_IMAGE_VARIANT}.img"
     image_gz = f"{image_name}.gz"
     image_url = (
-        f"https://downloads.openwrt.org/releases/{version}/targets/x86/64/"
+        f"{OPENWRT_RELEASE_BASE_URL}/{version}/targets/x86/64/"
         f"{image_gz}"
     )
     script = f'''
@@ -584,17 +713,17 @@ fi
 if [ ! -f {shlex.quote(image_name)} ]; then
   gzip -dk {shlex.quote(image_gz)} || test -f {shlex.quote(image_name)}
 fi
-if [ ! -f openwrt-base.qcow2 ]; then
-  qemu-img convert -f raw -O qcow2 {shlex.quote(image_name)} openwrt-base.qcow2
-  qemu-img resize openwrt-base.qcow2 2G
+if [ ! -f {shlex.quote(base_qcow2)} ]; then
+  qemu-img convert -f raw -O qcow2 {shlex.quote(image_name)} {shlex.quote(base_qcow2)}
+  qemu-img resize {shlex.quote(base_qcow2)} 2G
 fi
 for router in seller reseller; do
   overlay="$workdir/overlays/${{router}}.qcow2"
   if [ ! -f "$overlay" ]; then
-    qemu-img create -f qcow2 -F qcow2 -b "$workdir/images/openwrt-base.qcow2" "$overlay"
+    qemu-img create -f qcow2 -F qcow2 -b "$workdir/images/{base_qcow2}" "$overlay"
   fi
 done
-qemu-img info "$workdir/images/openwrt-base.qcow2"
+qemu-img info "$workdir/images/{base_qcow2}"
 printf '\\nPrepared overlays:\\n'
 ls -lh "$workdir/overlays"
 '''
@@ -813,6 +942,8 @@ def start_poc(args: argparse.Namespace) -> int:
     host = cast(str, args.host)
     ephemeral_client = bool(getattr(args, "ephemeral_client", False))
     workdir = cast(str, args.workdir)
+    requested_version = cast(str, getattr(args, "openwrt_version", DEFAULT_OPENWRT_VERSION))
+    _, base_qcow2 = resolve_openwrt_profile(requested_version)
     pidfile, _serial_sock, disk = _poc_paths(workdir)
 
     # Step 1: bridge, tap, host IP, overlay, QEMU
@@ -821,11 +952,12 @@ set -eu
 workdir={shlex.quote(workdir)}
 workdir=$(eval printf '%s' "$workdir")
 mkdir -p "$workdir/run" "$workdir/overlays"
-base="$workdir/images/openwrt-base.qcow2"
+base="$workdir/images/{base_qcow2}"
 disk={disk}
 pidfile={pidfile}
 
 if [ ! -f "$base" ]; then
+  echo "Missing base image for OpenWrt profile '{requested_version}': $base" >&2
   printf 'OpenWrt base image missing. Run prepare-image first.\\n' >&2
   exit 1
 fi
@@ -860,6 +992,17 @@ sudo iptables -C FORWARD -i {POC_BRIDGE} -j ACCEPT 2>/dev/null || sudo iptables 
 sudo iptables -C FORWARD -o {POC_BRIDGE} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 2 -o {POC_BRIDGE} -j ACCEPT
 sudo iptables -t nat -C POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUERADE 2>/dev/null || sudo iptables -t nat -A POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUERADE
 
+# A leftover overlay from another OpenWrt profile must not silently boot
+# the old line: recreate it when its backing image is not this profile's
+# base (overlays are disposable; snapshots preserve state).
+if [ -f "$disk" ]; then
+  _backing=$(qemu-img info --output=json "$disk" | grep -o '"backing-filename": "[^"]*"' | cut -d '"' -f4)
+  if [ -n "$_backing" ] && [ "$_backing" != "$base" ]; then
+    echo "Overlay backs $_backing but profile base is $base - recreating overlay"
+    rm -f "$disk"
+  fi
+fi
+
 # Create overlay if needed
 if [ ! -f "$disk" ]; then
   qemu-img create -f qcow2 -F qcow2 -b "$base" "$disk"
@@ -892,7 +1035,7 @@ printf 'Started POC OpenWrt VM pid=%s\\n' "$(cat "$pidfile")"
     # Step 2: provision VM via serial console
     print("Provisioning OpenWrt VM via serial console...")
     provision_script = _generate_provision_script(workdir)
-    result = run_python_on_host(host, provision_script, timeout=120)
+    result = run_python_on_host(host, provision_script, timeout=420)
     if result.stdout:
         print(result.stdout)
     if result.stderr:
@@ -987,7 +1130,11 @@ printf 'Started Debian client VM pid=%s\\n' "$(cat "$client_pidfile")"
         f"echo CLIENT_SSH_READY; exit 0; fi; "
         f"sleep 5; done; exit 1"
     )
-    probe_result = run_remote(host, quote_script(ssh_probe), timeout=300)
+    # 36 tries x (5s connect + 5s sleep) can take ~360s on a loaded host
+    # (fresh client overlay boots cloud-init for minutes) — keep the
+    # subprocess budget above the loop's worst case so a slow client falls
+    # through to serial provisioning (Step 5) instead of raising.
+    probe_result = run_remote(host, quote_script(ssh_probe), timeout=480)
     client_provisioned = probe_result.returncode == 0
     if client_provisioned:
         print("Client SSH up — skipping serial provisioning.", flush=True)
@@ -1441,12 +1588,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     image_parser = subparsers.add_parser("prepare-image", help="Download and prepare OpenWrt x86 images")
     _ = image_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
-    _ = image_parser.add_argument("--openwrt-version", default=DEFAULT_OPENWRT_VERSION)
+    _ = image_parser.add_argument(
+        "--openwrt-version",
+        default=default_openwrt_profile(),
+        help=f"OpenWrt image profile or exact version (default: {DEFAULT_OPENWRT_VERSION}, "
+             "overridable with TOLLGATE_VLAB_OPENWRT; see OPENWRT_IMAGE_PROFILES)",
+    )
     _ = image_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     image_parser.set_defaults(func=prepare_image)
 
+    profiles_parser = subparsers.add_parser(
+        "profiles",
+        help="Print the resolved OpenWrt image config for every profile (no SSH, no download)",
+    )
+    _ = profiles_parser.add_argument(
+        "--openwrt-version",
+        default=None,
+        help="Also resolve this profile/version (keys: " + ", ".join(OPENWRT_IMAGE_PROFILES) + ")",
+    )
+    profiles_parser.set_defaults(func=print_profiles)
+
     start_parser = subparsers.add_parser("start-poc", help="Start OpenWrt VM and Debian client VM")
     _ = start_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = start_parser.add_argument("--openwrt-version", default=default_openwrt_profile(),
+                                  help="OpenWrt image profile or exact version (see OPENWRT_IMAGE_PROFILES)")
     _ = start_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = start_parser.add_argument("--ephemeral-client", action="store_true",
                                   help="Run the Debian client with QEMU -snapshot: writes are discarded "
@@ -1498,7 +1663,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     poc_parser = subparsers.add_parser("poc", help="Prepare image, start VMs, and run smoke proof")
     _ = poc_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
-    _ = poc_parser.add_argument("--openwrt-version", default=DEFAULT_OPENWRT_VERSION)
+    _ = poc_parser.add_argument("--openwrt-version", default=default_openwrt_profile())
     _ = poc_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = poc_parser.add_argument("--timeout", type=int, default=120)
     poc_parser.set_defaults(func=run_poc)

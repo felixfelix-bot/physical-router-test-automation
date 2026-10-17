@@ -32,6 +32,45 @@ python3 scripts/virtual-lab.py start-poc --host localhost
 python3 scripts/virtual-lab.py stop-poc --host localhost
 ```
 
+## OpenWrt image profiles
+
+The lab can boot more than one OpenWrt line. Each profile owns a dedicated
+base qcow2, so preparing one version never clobbers another:
+
+| Profile   | Point release | Base image                   | Image variant |
+|-----------|---------------|------------------------------|---------------|
+| `24.10.1` | 24.10.1       | `openwrt-base.qcow2` (legacy) | `x86-64-generic-ext4-combined` |
+| `25.12`   | 25.12.5       | `openwrt-base-25.12.5.qcow2`  | `x86-64-generic-ext4-combined` |
+
+Both fetch `openwrt-<version>-x86-64-generic-ext4-combined.img.gz` from
+`https://downloads.openwrt.org/releases/<version>/targets/x86/64/`.
+
+```bash
+# Inspect the resolved config (no SSH, no download, no boot)
+python3 scripts/virtual-lab.py profiles
+python3 scripts/virtual-lab.py profiles --openwrt-version 25.12
+
+# Prepare + boot the 25.12 line
+python3 scripts/virtual-lab.py prepare-image --openwrt-version 25.12
+python3 scripts/virtual-lab.py start-poc     --openwrt-version 25.12
+
+# The same selection through the provider seam
+TOLLGATE_VLAB_HOST=dq05 TOLLGATE_VLAB_OPENWRT=25.12 \
+  python3 scripts/provider.py create -p local-kvm
+```
+
+**Default stays 24.10.1.** With no `--openwrt-version` and no
+`TOLLGATE_VLAB_OPENWRT`, every subcommand resolves to the pinned `24.10.1`
+profile, and the legacy `openwrt-base.qcow2` name is unchanged — existing lab
+installs and overlays keep working. An explicit flag overrides the env var.
+
+**Checksums are recorded, not enforced.** `prepare-image` only curls and
+gunzips; the pinned 24.10.1 path never verified a digest, so the 25.12 profile
+follows the same behaviour instead of silently diverging. The published
+sha256 of each `.img.gz` is stored in `OPENWRT_IMAGE_PROFILES` (`sha256_gz`)
+and printed by `profiles`; enabling verification for both profiles at once is
+a separate change.
+
 ## Architecture
 
 ```
