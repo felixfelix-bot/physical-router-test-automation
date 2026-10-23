@@ -5,20 +5,25 @@ Pins the card ARCH-3 fix on the physical GL-MT6000:
     uci add_list nodogsplash.@nodogsplash[0].authenticated_users_rule='allow tcp port 2121'
     uci commit nodogsplash && /etc/init.d/nodogsplash restart
 
-Two things are pinned here, both measured 2026-10-23:
+Three things are pinned here, all measured 2026-10-23.
 
-1. ADDRESS DISCOVERY. The card's address (192.168.8.1) is wrong and a naive
-   ``ip route get`` gives a FALSE POSITIVE, because it falls through to the
-   default gateway when no local interface is on that subnet. These tests pin
-   the corrected resolution rule: a box is reachable only if it answers on a
-   link we share, and its own DHCP server identifies its subnet.
+1. ADDRESS DISCOVERY. The card's address (192.168.8.1) is wrong, and a naive
+   ``ip route get`` gives a FALSE POSITIVE — it falls through to the default
+   gateway when no local interface is on that subnet.
 
-2. THE FIX ITSELF. The config write must be followed by a behavioural read-back
-   from the client, not just a ``uci get`` — a stale generated ruleset is the
-   documented failure mode (config correct, runtime wrong).
+2. THE FIX ITSELF, behaviourally. A ``uci get`` is not enough: config-correct
+   with a stale generated ruleset is the documented failure mode, so the rule is
+   asserted by reaching ``/whoami`` from the client.
 
-No test here ever mutates a router: every router-touching test is skipped unless
-ROUTER_IP and ROUTER_PASSWORD are supplied.
+3. NO VACUOUS GREEN. The kit's session conftest *degrades* an unreachable backend
+   into skips (``_degrade_session_to_skips``). Measured: pointed at a dead address
+   this file reported "1 passed, 4 skipped" — green, on a box that was not there.
+   So when a router IS declared (``ROUTER_IP`` set) the rail is marked ``required``,
+   and the kit's outcome gate turns every skip into FAILED "NOT VERIFIED".
+
+ONE KNOB: set ``ROUTER_IP`` and the rail demands a hard verdict; leave it unset and
+the rail is inert (skips) so it is safe in CI. Nothing here ever mutates a router —
+applying the fix is ``scripts/offline/07-portal3-authenticated-users-rule.sh``.
 """
 from __future__ import annotations
 
@@ -27,25 +32,29 @@ import os
 import re
 import socket
 import subprocess
+import urllib.error
+import urllib.request
 
 import pytest
 
 ROUTER_IP = os.environ.get("ROUTER_IP", "")
 ROUTER_PASSWORD = os.environ.get("ROUTER_PASSWORD", "")
-RULE = "allow tcp port 2121"
 OPT = "nodogsplash.@nodogsplash[0].authenticated_users_rule"
 
-# Measured 2026-10-23 on the live GL-MT6000: the box is at this address on its own
-# link (its DHCP server), and its LAN NIC MAC is NOT a GL.iNet OUI.
+# Measured 2026-10-23: the live GL-MT6000's LAN MAC. It is NOT a GL.iNet OUI
+# (only its dual-homed WAN side is), so OUI lookup alone misidentifies it.
 MEASURED_LAN_MAC = "a8:63:7d:dc:51:64"
+
+_MARKS = [pytest.mark.regression, pytest.mark.hardware, pytest.mark.physical_only]
+if ROUTER_IP:
+    # A declared router must produce a verdict. Without this, an unreachable box
+    # degrades to skips and the rail reports green (measured, see module docstring).
+    _MARKS.append(pytest.mark.required)
+pytestmark = _MARKS
 
 needs_device = pytest.mark.skipif(
     not ROUTER_IP,
-    reason="needs ROUTER_IP (physical router lane); set ROUTER_IP to run against hardware",
-)
-needs_creds = pytest.mark.skipif(
-    not (ROUTER_IP and ROUTER_PASSWORD),
-    reason="needs ROUTER_IP + ROUTER_PASSWORD to read router uci state",
+    reason="needs ROUTER_IP (physical router lane); set it to run against hardware",
 )
 
 
@@ -53,8 +62,8 @@ def _local_iface_for(ip: str) -> str | None:
     """Return the local interface that can *directly* reach `ip`, or None.
 
     Uses ``ip route get`` but REJECTS a route whose next hop is a gateway: such a
-    route means we do NOT share a link with the target, which is exactly the
-    false positive that sent the ARCH-3 card to 192.168.8.1.
+    route means we do not share a link with the target. That is exactly the false
+    positive that sent the ARCH-3 card to 192.168.8.1.
     """
     try:
         out = subprocess.run(
@@ -64,37 +73,9 @@ def _local_iface_for(ip: str) -> str | None:
         return None
     if " via " in out:          # reached through a gateway => not on our link
         return None
-
     m = re.search(r"\bdev\s+(\S+)", out)
     return m.group(1) if m else None
 
-
-# --- 1. the address-discovery regression ------------------------------------
-
-def test_default_gateway_route_is_not_accepted_as_directly_reachable():
-    """A via-gateway route must be reported as NOT on-link.
-
-    Regression for ARCH-3: `ip route get 192.168.8.1` on x280 printed
-    `via 192.168.2.1 dev enx00e04c36043e` — the house default gateway — and the
-    card's step 1 was treated as 'address resolves'. It resolved to the wrong box.
-    """
-    iface = _local_iface_for("192.168.8.1")
-    # Either no route at all, or the helper correctly refuses a gatewayed route.
-    # What must NEVER happen is the helper returning the house LAN interface.
-    assert iface != "enx00e04c36043e", (
-        "false positive: a route through the default gateway must not be "
-        "reported as a direct link to 192.168.8.1"
-    )
-
-
-def test_router_address_must_be_private_and_well_formed():
-    if not ROUTER_IP:
-        pytest.skip("ROUTER_IP unset")
-    addr = ipaddress.ip_address(ROUTER_IP)
-    assert addr.is_private, f"{ROUTER_IP} is not a private address"
-
-
-# --- 2. the live fix, when a router is supplied ------------------------------
 
 def _tcp_open(ip: str, port: int, timeout: float = 5.0) -> bool:
     try:
@@ -106,7 +87,6 @@ def _tcp_open(ip: str, port: int, timeout: float = 5.0) -> bool:
 
 def _ssh(cmd: str, timeout: int = 20) -> tuple[int, str]:
     """Run `cmd` on the router via password auth. Never guesses a credential."""
-    assert ROUTER_PASSWORD, "ROUTER_PASSWORD required"
     if not os.path.exists("/usr/bin/sshpass"):
         pytest.skip("sshpass not installed")
     p = subprocess.run(
@@ -124,6 +104,29 @@ def _ssh(cmd: str, timeout: int = 20) -> tuple[int, str]:
     return p.returncode, (p.stdout + p.stderr)
 
 
+# --- 1. the address-discovery regression (runs everywhere, needs no hardware) --
+
+def test_default_gateway_route_is_not_accepted_as_directly_reachable():
+    """A via-gateway route must be reported as NOT on-link.
+
+    Regression for ARCH-3: `ip route get 192.168.8.1` on x280 printed
+    `via 192.168.2.1 dev enx00e04c36043e` — the house default gateway — and the
+    card's step 1 was treated as 'the address resolves'. It resolved to the wrong
+    box. What must NEVER happen is the helper returning the house LAN interface.
+    """
+    assert _local_iface_for("192.168.8.1") != "enx00e04c36043e", (
+        "false positive: a route through the default gateway must not be "
+        "reported as a direct link to 192.168.8.1"
+    )
+
+
+# --- 2. the live fix, when a router is supplied ------------------------------
+
+@needs_device
+def test_router_address_must_be_private_and_well_formed():
+    assert ipaddress.ip_address(ROUTER_IP).is_private, f"{ROUTER_IP} is not private"
+
+
 @needs_device
 def test_router_answers_on_2121():
     """The tollgate-wrt API must answer. TCP, not ICMP — these boxes drop ICMP."""
@@ -134,17 +137,15 @@ def test_router_answers_on_2121():
 def test_whoami_returns_200_pre_auth():
     """PORTAL-3 behaviour: a NOT-yet-authenticated client reaches :2121/whoami.
 
-    A 200 here is the observable effect of the authenticated_users_rule. Note a
-    200 is not proof on its own if a portal stub answers on the same port, so we
-    also assert the body identifies a MAC — the real backend echoes the client MAC.
+    A 200 alone is weak — a portal stub can share the port — so the body must
+    identify the real backend (it echoes the requesting client's MAC).
     """
-    import urllib.request
-
-    req = urllib.request.Request(f"http://{ROUTER_IP}:2121/whoami")
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(
+            f"http://{ROUTER_IP}:2121/whoami", timeout=10
+        ) as r:
             code, body = r.status, r.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:            # non-2xx still proves reachability
+    except urllib.error.HTTPError as e:
         pytest.fail(f"/whoami returned HTTP {e.code}, expected 200 — fix not effective")
     except OSError as e:
         pytest.fail(f"/whoami unreachable: {e}")
@@ -155,9 +156,19 @@ def test_whoami_returns_200_pre_auth():
     )
 
 
-@needs_creds
+@needs_device
 def test_authenticated_users_rule_is_present_on_the_node():
-    """The rule must be read back FROM THE NODE, not from the apply's own echo."""
+    """The rule must be read back FROM THE NODE, not from the apply's own echo.
+
+    A router was declared but no credential was supplied: that is an UNVERIFIED
+    state, not a pass, so this fails loudly naming the blocker instead of skipping.
+    """
+    if not ROUTER_PASSWORD:
+        pytest.fail(
+            "NOT VERIFIED: ROUTER_PASSWORD unset — the PORTAL-3 rule cannot be read "
+            f"back from the node (uci get {OPT}). A router was declared via ROUTER_IP, "
+            "so an unverified rule is a failure, not a pass. Supply ROUTER_PASSWORD."
+        )
     rc, out = _ssh(f"uci -q get {OPT}")
     if rc != 0:
         pytest.fail(f"uci get {OPT} failed rc={rc}: {out.strip()}")
