@@ -328,6 +328,36 @@ full-all: ## Run all test suites (lint + playwright + degraded + upstream)
 	@echo "$(BOLD)=======================================$(RESET)"
 
 # ===========================================================================
+#  VIRTUAL LAB — host-local QEMU OpenWrt router (no hardware, no lock)
+#
+#  Deliberately does NOT call require_hardware_lock: this lane is virtual, so
+#  holding the physical bench lock here would serialize virtual work behind
+#  hardware for no reason. See docs/VIRTUAL-LAB.md for the rail's status —
+#  in particular, the purchase/session-flip path is inert until the router VM
+#  gets a second NIC, and the harness says so rather than reporting green.
+# ===========================================================================
+
+.PHONY: lab-up lab-smoke lab-verify lab-purchase lab-down lab-status
+
+lab-up: ## Start the virtual TollGate lab (boot + install + verify) [qemu]
+	@bash scripts/lab/run-lab.sh up
+
+lab-smoke: ## Run the virtual-lab router smoke gate [pytest]
+	@bash scripts/lab/run-lab.sh smoke
+
+lab-verify: ## Assert the lab is a working TollGate lab (:2121 answers kind:10021)
+	@bash scripts/lab/run-lab.sh verify
+
+lab-purchase: ## Drive one purchase (inert on single-NIC VM — see docs/VIRTUAL-LAB.md)
+	@bash scripts/lab/run-lab.sh purchase
+
+lab-status: ## Show virtual-lab VM + :2121 status
+	@bash scripts/lab/run-lab.sh status
+
+lab-down: ## Tear down the virtual lab (VMs, bridge, mint)
+	@bash scripts/lab/run-lab.sh down
+
+# ===========================================================================
 #  ROUTER MANAGEMENT
 # ===========================================================================
 
