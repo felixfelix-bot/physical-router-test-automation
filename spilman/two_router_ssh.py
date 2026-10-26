@@ -35,7 +35,8 @@ RUN = '/tmp/spilman-ssh-' + str(int(time.time()))
 LABGRID = str(HOME / '.hermes/hermes-agent/venv/bin/labgrid-client')
 LG_COORD = os.environ.get(
     'LG_COORDINATOR', '[fd36:3c0f:d6f:8029:ea50:958b:672e:bb0]:20408')
-PLACE_A, PLACE_B = 'gl-mt3000', 'comfast'
+PLACE_A = os.environ.get('SPILMAN_PLACE_A', 'gl-mt3000')
+PLACE_B = os.environ.get('SPILMAN_PLACE_B', 'comfast')
 
 
 def lg(*args, check=True):
@@ -126,9 +127,33 @@ def main():
             listeners = ssh(board, 'netstat -ltn')
             assert not re.search(r':' + str(PORT) + r'\s', listeners)
             ssh(board, f'mkdir -p {RUN}/etc/tollgate {RUN}/tmp {RUN}/phase')
-        progress('Both SSH identities and private port availability observed; lock held.')
-        base = HOME / 'worktrees/spilman-access/target/aarch64-unknown-linux-musl/release'
-        for board, source, name in [(A, base / 'tollgate-module-basic-rust', 'seller'), (B, base / 'examples/spilman-payer', 'payer')]:
+        progress('Both SSH identities and private port availability observed; place held.')
+        # Resolve the binary by the board's OWN architecture. This used to be a
+        # hardcoded aarch64 target dir, which silently excluded any non-aarch64
+        # participant -- exactly the mistake that made a second board look
+        # impossible for so long.
+        targets = {
+            'aarch64': 'aarch64-unknown-linux-musl',
+            'x86_64': 'x86_64-unknown-linux-musl',
+            'armv7l': 'armv7-unknown-linux-musleabihf',
+        }
+
+        def binary_for(board, rel):
+            machine = ssh(board, 'uname -m').strip().splitlines()[-1].strip()
+            target = targets.get(machine)
+            if not target:
+                raise RuntimeError('board %s reports %r: no pinned musl target for '
+                                   'that architecture (Rust has no mips target at all)'
+                                   % (board, machine))
+            path = HOME / 'worktrees/spilman-access/target' / target / 'release' / rel
+            if not path.exists():
+                raise RuntimeError('missing %s build for %s: %s' % (machine, board, path))
+            log('BINARY_ARCH', board, machine, target)
+            return path
+
+        for board, rel, name in [(A, 'tollgate-module-basic-rust', 'seller'),
+                                 (B, 'examples/spilman-payer', 'payer')]:
+            source = binary_for(board, rel)
             want = hashlib.sha256(source.read_bytes()).hexdigest()
             cmd(['scp', '-O', '-i', str(HOME / '.ssh/id_ed25519'), str(source), f'root@{board}:{RUN}/{name}'])
             actual = ssh(board, f'sha256sum {RUN}/{name}').split()[0]
