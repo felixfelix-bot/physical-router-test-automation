@@ -18,11 +18,44 @@ from mint_proxy import CountingMintProxy
 HOME = Path.home()
 REPO = Path(__file__).resolve().parents[1]
 ART = Path(os.environ.get('SPILMAN_EVIDENCE', str(HOME / 'reports/spilman-tollgate/ssh-run')))
-A, B = '192.168.50.205', '192.168.50.219'
+A, B = None, None  # resolved from labgrid places in main(); NEVER hardcoded
 HOST = '192.168.50.10'
 PORT, MP, PP = 18239, 18338, 18339
 SSH = ['ssh', '-i', str(HOME / '.ssh/id_ed25519'), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8']
 RUN = '/tmp/spilman-ssh-' + str(int(time.time()))
+
+# --- labgrid places are the exclusivity mechanism -----------------------------
+# The board addresses used to be literals here, which the fleet agreement
+# forbids ("never hardcode device IPs ... resolve from the registry or a labgrid
+# place") and which silently rotted whenever the bench was re-addressed. The
+# place carries the address (NetworkService.params.address) and its tags, so we
+# ask it. Holding the place is also what makes this run "on the labgrid": an
+# ad-hoc flock only coordinates scripts that agree to use the same lock file,
+# whereas a place is the fleet-wide reservation every labgrid client honours.
+LABGRID = str(HOME / '.hermes/hermes-agent/venv/bin/labgrid-client')
+LG_COORD = os.environ.get(
+    'LG_COORDINATOR', '[fd36:3c0f:d6f:8029:ea50:958b:672e:bb0]:20408')
+PLACE_A, PLACE_B = 'gl-mt3000', 'comfast'
+
+
+def lg(*args, check=True):
+    env = {**os.environ, 'LG_COORDINATOR': LG_COORD}
+    proc = subprocess.run([LABGRID, *args], capture_output=True, text=True,
+                          env=env, timeout=90)
+    if check and proc.returncode != 0:
+        raise RuntimeError('labgrid-client %s failed: %s'
+                           % (' '.join(args), proc.stderr.strip()))
+    return proc
+
+
+def place_address(place):
+    """Resolve a board's LAN address from its place. No literal fallback: if the
+    place cannot say where the board is, the run must fail rather than guess."""
+    out = lg('-p', place, 'show').stdout
+    match = re.search(r"'address':\s*'([0-9.]+)'", out)
+    if not match:
+        raise RuntimeError('place %r advertises no NetworkService address' % place)
+    return match.group(1)
 
 
 def log(*args):
@@ -64,12 +97,24 @@ def progress(text):
 
 
 def main():
+    global A, B
     ART.mkdir(parents=True, exist_ok=True)
-    lock = open(HOME / '.hermes/state/bench-mt3000.lock', 'a')
+    # Exclusivity comes from labgrid places, not a local flock. A place is
+    # honoured by every labgrid client on the fleet; a flock only by scripts
+    # that happen to agree on the same lock file -- which is how two benches can
+    # silently fight over one UART.
+    held = []
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        log('BUSY: skipping'); return 3
+        for place in (PLACE_A, PLACE_B):
+            lg('-p', place, 'acquire')
+            held.append(place)
+    except RuntimeError as exc:
+        for place in held:
+            lg('-p', place, 'release', check=False)
+        log('BUSY: %s' % exc)
+        return 3
+    A, B = place_address(PLACE_A), place_address(PLACE_B)
+    log('PLACES_ACQUIRED', ' '.join(held), 'A=' + A, 'B=' + B)
     procs = []
     remote = []
     proxy = None
@@ -190,8 +235,9 @@ def main():
                 ssh(board, f'p=$(cat {RUN}/{name}.pid); if kill -0 "$p" 2>/dev/null; then echo STILL_RUNNING; exit 1; else echo STOPPED; fi; netstat -ltn')
             except Exception as e:
                 log('VERIFY_CLEANUP_ERROR', e)
-        fcntl.flock(lock, fcntl.LOCK_UN); lock.close()
-        log('LOCK_RELEASED')
+        for place in reversed(held):
+            lg('-p', place, 'release', check=False)
+        log('PLACES_RELEASED', ' '.join(held))
 
 
 if __name__ == '__main__':
