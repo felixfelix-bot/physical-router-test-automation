@@ -29,6 +29,10 @@ ROUTER_ID=""
 ARTIFACT_REPO=""
 BACKEND="${TOLLGATE_BACKEND:-go}"
 TOLLGATE_PROFILE=""
+# NDS dependency identity gate. A run that cannot name the nodogsplash package
+# revision + binary hashes it exercised is NOT VERIFIED and must not be reported
+# as a pass, so the gate is ON by default on this (the release) path.
+NDS_GATE=true
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -75,6 +79,19 @@ while [[ $# -gt 0 ]]; do
     --profile)
       TOLLGATE_PROFILE="$2"
       shift 2
+      ;;
+    --nds-qualification)
+      TOLLGATE_NDS_QUALIFICATION="$2"
+      export TOLLGATE_NDS_QUALIFICATION
+      shift 2
+      ;;
+    --no-nds-gate)
+      # Development only: record the identity but do not fail the run on it.
+      # A NOT VERIFIED identity is still written and printed — this never
+      # turns an unverified dependency into a pass, it only stops it failing
+      # a run whose point is something else.
+      NDS_GATE=false
+      shift
       ;;
     *)
       echo "ERROR: Unknown option: $1" >&2
@@ -129,6 +146,24 @@ set +a
 # ── Set defaults ────────────────────────────────────────────────────────
 ROUTER_IP="${ROUTER_IP:-${TOLLGATE_SSH_HOST:-}}"
 ROUTER_ID="${ROUTER_ID:-${TOLLGATE_ROUTER_ID:-}}"
+
+# ── Refuse mock mode on the release path ────────────────────────────────
+# TOLLGATE_MOCK=1 swaps the router for a mock. A mock has no installed
+# nodogsplash, so any version or binary hash it produced would be fabricated:
+# this path cannot yield release evidence. Mechanical, not a comment — a mock
+# run stops here instead of producing a green result nobody can attribute.
+if [[ "$NDS_GATE" == "true" ]]; then
+  case "${TOLLGATE_MOCK:-}" in
+    1|true|TRUE|yes|YES)
+      echo "ERROR: TOLLGATE_MOCK=${TOLLGATE_MOCK} — mock runs cannot produce release evidence." >&2
+      echo "       A mock router has no installed nodogsplash to identify, so the" >&2
+      echo "       version/hashes would be invented. Re-run against a real router," >&2
+      echo "       or pass --no-nds-gate to record a development run that is not" >&2
+      echo "       claimed as release evidence." >&2
+      exit 1
+      ;;
+  esac
+fi
 
 # Check for password
 if [[ -z "$TOLLGATE_LUCI_PASSWORD" && -z "$TOLLGATE_SSH_PASSWORD" ]]; then
@@ -276,6 +311,11 @@ PYTEST_PR_ARGS=()
 if [[ -n "${TOLLGATE_PR:-}" ]]; then
   PYTEST_PR_ARGS=(--expected-pr "$TOLLGATE_PR")
 fi
+# Pin pytest's results dir to THIS run's directory. Without this, conftest's
+# results_dir fixture invents results/test-<timestamp>/ while collect-results
+# reads results/<RUN_ID>/ — the NDS identity snapshots would be written where
+# the release gate never looks, so the gate could only ever report NOT VERIFIED.
+PYTEST_PR_ARGS+=(--results "$RESULTS_DIR")
 
 if [[ "$TEST_TYPE" == "api" ]]; then
   python3 -m pytest api/ -v --tb=short --backend="$BACKEND" \
@@ -297,6 +337,17 @@ fi
 FINISHED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 echo "==> Collecting results..."
+# --require-nds-identity makes the collected run.json refuse to call an
+# unattributed nodogsplash a pass. NDS_GATE=false (--no-nds-gate) records the
+# identity without gating; it never upgrades NOT VERIFIED to a pass.
+NDS_GATE_ARGS=()
+if [[ "$NDS_GATE" == "true" ]]; then
+  NDS_GATE_ARGS+=(--require-nds-identity)
+fi
+if [[ -n "${TOLLGATE_NDS_QUALIFICATION:-}" ]]; then
+  NDS_GATE_ARGS+=(--nds-qualification "$TOLLGATE_NDS_QUALIFICATION")
+fi
+set +e
 python3 "$SCRIPT_DIR/collect-results.py" \
   --run-dir "$RESULTS_DIR" \
   --pytest "api=raw/api/junit.xml" \
@@ -315,7 +366,17 @@ python3 "$SCRIPT_DIR/collect-results.py" \
   --test-plan "pr-${TEST_TYPE}" \
   --started-at "$STARTED_AT" \
   --finished-at "$FINISHED_AT" \
-  --allow-failures || true
+  "${NDS_GATE_ARGS[@]}" \
+  --allow-failures
+collect_rc=$?
+set -e
+# collect-results exits 1 when the identity gate refuses the run. That verdict is
+# a release verdict, not a flaky-test verdict, so --allow-failures does not
+# suppress it — propagate it into the script's own exit code.
+if [[ $collect_rc -ne 0 && "$NDS_GATE" == "true" ]]; then
+  echo "==> NDS dependency identity gate FAILED (collect-results exit $collect_rc)" >&2
+  exit_code=1
+fi
 
 # ── Render HTML report ───────────────────────────────────────────────────
 echo "==> Rendering HTML report..."

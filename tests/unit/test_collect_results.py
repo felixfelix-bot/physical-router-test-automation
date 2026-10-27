@@ -13,6 +13,8 @@ import sys
 import pytest
 
 SCRIPTS_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
+REPO_ROOT = os.path.realpath(os.path.join(SCRIPTS_DIR, ".."))
+
 _spec = importlib.util.spec_from_file_location(
     "collect_results",
     os.path.join(SCRIPTS_DIR, "collect-results.py"),
@@ -433,3 +435,157 @@ def test_router_ip_redacted_default(tmp_path):
 
     result2 = _run_collect(tmp_path, ["--pytest", "api=nonexistent.xml"])
     assert result2.returncode == 2
+
+
+# ---------------------------------------------------------------------------
+# nodogsplash dependency identity (lib/nds_identity.py) through the real CLI
+#
+# A green NDS run used to certify nothing: run.json had no dependency identity
+# at all, so a pass could not be attributed to a package revision.  These tests
+# drive scripts/collect-results.py as a subprocess, exactly as CI does, and
+# assert both the recorded block and the exit code of the release gate.
+# ---------------------------------------------------------------------------
+
+IDENTITY_DIR = os.path.join("raw", "nds-identity")
+
+FIXTURE_RECORDS = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "fixtures", "nds_identity", "records.json"
+)
+
+
+def _fixture_records():
+    with open(FIXTURE_RECORDS) as handle:
+        return json.load(handle)
+
+
+def _write_identity(run_dir, records, flavor="apk"):
+    """Write the two snapshots a real run would leave behind."""
+    sys.path.insert(0, REPO_ROOT)
+    from lib import nds_identity
+
+    responses = records[flavor]["responses"]
+
+    def run_ssh(cmd):
+        return responses[cmd]
+
+    ident_dir = os.path.join(str(run_dir), IDENTITY_DIR)
+    os.makedirs(ident_dir, exist_ok=True)
+    for phase in ("deploy", "teardown"):
+        identity = nds_identity.capture(run_ssh, phase=phase, env={}, clock=lambda: "2026-10-27T02:30:00Z")
+        nds_identity.write_snapshot(str(run_dir), identity)
+
+
+def _write_qualification(tmp_path, records):
+    path = tmp_path / "nds-qualification.json"
+    path.write_text(json.dumps(records["qualification"]))
+    return str(path)
+
+
+def _green_run(tmp_path, extra_args):
+    (tmp_path / "junit-pass.xml").write_text(
+        '<?xml version="1.0"?><testsuite tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="t" name="ok" time="0.01"/></testsuite>'
+    )
+    return _run_collect(tmp_path, ["--pytest", "api=junit-pass.xml", *extra_args])
+
+
+def test_dependency_block_is_always_recorded(tmp_path):
+    """Even with no identity captured, run.json carries an explicit NOT_VERIFIED."""
+    result = _green_run(tmp_path, [])
+    assert result.returncode == 0, result.stderr
+    run_json = json.loads((tmp_path / "run.json").read_text())
+    dep = run_json["sut"]["dependencies"]["nodogsplash"]
+    assert dep["status"] == "NOT_VERIFIED"
+    assert dep["recorded"] is False
+    assert any("no nodogsplash identity was recorded" in p for p in dep["problems"])
+
+
+def test_verified_identity_is_recorded_without_the_gate(tmp_path):
+    records = _fixture_records()
+    _write_identity(tmp_path, records)
+    qual = _write_qualification(tmp_path, records)
+
+    result = _green_run(tmp_path, ["--nds-qualification", qual])
+    assert result.returncode == 0, result.stderr
+    dep = json.loads((tmp_path / "run.json").read_text())["sut"]["dependencies"]["nodogsplash"]
+    assert dep["status"] == "VERIFIED", dep["problems"]
+    assert dep["version"] == "5.0.2-r2"
+    assert dep["release_evidence"] is False
+
+
+def test_gate_fails_the_run_when_identity_is_missing(tmp_path):
+    """--require-nds-identity: green tests + unknown dependency ⇒ exit 1."""
+    result = _green_run(tmp_path, ["--require-nds-identity"])
+    assert result.returncode == 1
+    assert "nodogsplash identity NOT VERIFIED" in result.stderr
+    run_json = json.loads((tmp_path / "run.json").read_text())
+    assert run_json["status"] == "failed"
+    assert run_json["sut"]["dependencies"]["nodogsplash"]["status"] == "NOT_VERIFIED"
+
+
+def test_gate_passes_when_identity_is_verified(tmp_path):
+    records = _fixture_records()
+    _write_identity(tmp_path, records)
+    qual = _write_qualification(tmp_path, records)
+
+    result = _green_run(tmp_path, ["--require-nds-identity", "--nds-qualification", qual])
+    assert result.returncode == 0, result.stderr
+    run_json = json.loads((tmp_path / "run.json").read_text())
+    assert run_json["status"] == "passed"
+    assert run_json["sut"]["dependencies"]["nodogsplash"]["status"] == "VERIFIED"
+
+
+def test_gate_is_not_bypassed_by_allow_failures(tmp_path):
+    """--allow-failures is about flaky tests, not about an unnamed dependency."""
+    result = _green_run(tmp_path, ["--require-nds-identity", "--allow-failures"])
+    assert result.returncode == 1
+    assert "refuses to report this run as release evidence" in result.stderr
+
+
+def test_gate_rejects_a_mock_run(tmp_path, monkeypatch):
+    records = _fixture_records()
+    _write_identity(tmp_path, records)
+    qual = _write_qualification(tmp_path, records)
+    monkeypatch.setenv("TOLLGATE_MOCK", "1")
+
+    result = _green_run(tmp_path, ["--require-nds-identity", "--nds-qualification", qual])
+    assert result.returncode == 1
+    dep = json.loads((tmp_path / "run.json").read_text())["sut"]["dependencies"]["nodogsplash"]
+    assert dep["mock_mode"] is True
+    assert any("mock" in p for p in dep["problems"])
+
+
+def test_wrong_installed_version_fails_the_gate(tmp_path):
+    """Installed 5.0.3-r1 against a 5.0.2-r2 qualification ⇒ gate fails."""
+    records = _fixture_records()
+    responses = dict(records["apk"]["responses"])
+    responses["apk info -v 2>/dev/null | grep -i '^nodogsplash'"] = "nodogsplash-5.0.3-r1\n"
+    sys.path.insert(0, REPO_ROOT)
+    from lib import nds_identity
+
+    for phase in ("deploy", "teardown"):
+        identity = nds_identity.capture(
+            lambda cmd: responses[cmd], phase=phase, env={}, clock=lambda: "t"
+        )
+        nds_identity.write_snapshot(str(tmp_path), identity)
+    qual = _write_qualification(tmp_path, records)
+
+    result = _green_run(tmp_path, ["--require-nds-identity", "--nds-qualification", qual])
+    assert result.returncode == 1
+    dep = json.loads((tmp_path / "run.json").read_text())["sut"]["dependencies"]["nodogsplash"]
+    assert dep["version"] == "5.0.3-r1"
+    assert any("version mismatch" in p for p in dep["problems"])
+
+
+def test_missing_qualification_manifest_warns_but_still_records(tmp_path):
+    """An unreadable manifest is a warning, not a crash — and never a pass."""
+    records = _fixture_records()
+    _write_identity(tmp_path, records)
+
+    result = _green_run(tmp_path, ["--nds-qualification", str(tmp_path / "absent.json")])
+    assert result.returncode == 0
+    dep = json.loads((tmp_path / "run.json").read_text())["sut"]["dependencies"]["nodogsplash"]
+    assert dep["status"] == "NOT_VERIFIED"
+    assert dep["expected"]["present"] is False
+    assert any("no expected nodogsplash identity" in p for p in dep["problems"])
+

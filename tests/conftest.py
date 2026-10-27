@@ -696,6 +696,15 @@ def deploy_session(request, router, backend, results_dir):
         )
         log.info("Pre-created ContainerClient for auto-screenshots")
 
+    # Capture the NDS dependency identity now that the deploy (if any) is in
+    # place: every run must name the nodogsplash package revision and binary
+    # hashes it exercised, otherwise a green result is unattributable.
+    # Non-fatal by design — a failed capture becomes NOT VERIFIED in run.json.
+    try:
+        router.capture_nds_identity(results_dir, phase="deploy")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("NDS identity capture (deploy) failed: %s", exc)
+
     yield
 
     # Collect session-end logs while the session still owns the DUT: this
@@ -708,6 +717,14 @@ def deploy_session(request, router, backend, results_dir):
         log.info("Collected session-end logs to %s", results_dir)
     except Exception:
         pass
+
+    # Second identity snapshot, still inside the session that owns the DUT.
+    # Compared against the deploy-time snapshot: unexplained drift fails the
+    # run, because then neither snapshot describes what the tests exercised.
+    try:
+        router.capture_nds_identity(results_dir, phase="teardown")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("NDS identity capture (teardown) failed: %s", exc)
 
     try:
         if restore:

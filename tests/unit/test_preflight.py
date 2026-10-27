@@ -95,6 +95,67 @@ class TestProbeRouter:
         assert "sshHost" in probe.ssh_error
 
 
+class TestRouterProbeNdsIdentity:
+    """A probe row must name the nodogsplash package, not just 'running'.
+
+    Before this, ``nodogsplash_running: True`` was the whole story: two runs a
+    package revision apart produced identical rows, so a green result could not
+    be attributed to a shipped artifact.
+    """
+
+    @staticmethod
+    def _responses(**overrides):
+        return dict(HEALTHY_RESPONSES, **overrides)
+
+    def test_probe_records_package_version_and_revision(self):
+        responses = self._responses(**{
+            "command -v apk": "/usr/bin/apk\n",
+            "command -v opkg": "",
+            "apk info -v 2>/dev/null | grep -i '^nodogsplash'": "nodogsplash-5.0.2-r2\n",
+            "apk --print-arch 2>/dev/null": "aarch64_cortex-a53\n",
+        })
+        probe = probe_router("alpha", {"sshHost": "10.0.0.1"}, run_ssh=scripted_ssh(responses))
+        assert probe.nodogsplash_running
+        assert probe.nodogsplash_version == "5.0.2-r2"
+        assert probe.nodogsplash_revision == "r2"
+        assert probe.nodogsplash_manager == "apk"
+        assert probe.nodogsplash_arch == "aarch64_cortex-a53"
+
+    def test_daemon_up_but_identity_unknown_is_visible(self):
+        """Running with no package manager ⇒ empty version, not a fake one."""
+        responses = self._responses(**{"command -v apk": "", "command -v opkg": ""})
+        probe = probe_router("alpha", {"sshHost": "10.0.0.1"}, run_ssh=scripted_ssh(responses))
+        assert probe.nodogsplash_running
+        assert probe.nodogsplash_version == ""
+        assert probe.nodogsplash_manager == ""
+
+    def test_checklist_says_running_unidentified_not_running(self):
+        """The human-readable row must distinguish 'up' from 'up, version known'."""
+        snapshot = {"generated_at": "now", "routers": {"alpha": {
+            "id": "alpha", "ssh_ok": True, "firmware": "OpenWrt 24.10.1",
+            "tollgate_version": "", "tollgate_running": False,
+            "nodogsplash_running": True, "nodogsplash_version": "",
+        }}}
+        assert "nds=running/unidentified" in format_checklist(snapshot)
+
+    def test_checklist_names_the_version_when_known(self):
+        snapshot = {"generated_at": "now", "routers": {"alpha": {
+            "id": "alpha", "ssh_ok": True, "firmware": "OpenWrt 24.10.1",
+            "tollgate_version": "", "tollgate_running": False,
+            "nodogsplash_running": True, "nodogsplash_version": "5.0.2-r2",
+        }}}
+        assert "nds=5.0.2-r2/running" in format_checklist(snapshot)
+
+    def test_ssh_failure_does_not_fabricate_an_identity(self):
+        """An unreachable box yields empty fields, never a default version."""
+        def down(cmd):
+            raise SshError("exit 255: connect timeout")
+        probe = probe_router("beta", {"sshHost": "10.0.0.2"}, run_ssh=down)
+        assert not probe.ssh_ok
+        assert probe.nodogsplash_version == ""
+        assert probe.nodogsplash_manager == ""
+
+
 class TestMakeSshRunner:
     @staticmethod
     def _runner_with_fake_subprocess(monkeypatch, entry, env, rc=0, stdout="ok\n"):
