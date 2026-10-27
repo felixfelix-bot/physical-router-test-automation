@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Qualification manifest for the nodogsplash (NDS) dependency under test.",
+    "",
+    "A green NDS run only certifies something if it names the package revision and",
+    "binary hashes it exercised, and those match an expectation recorded here.",
+    "This file IS that expectation. An empty `qualified` map is deliberate: a fresh",
+    "checkout has qualified nothing, so every run reports NOT_VERIFIED rather than",
+    "inheriting the previous pass.",
+    "",
+    "A new feed version does NOT inherit a pass. To qualify a build, capture its real",
+    "identity on the bench - never copy the fixture values from",
+    "tests/fixtures/nds_identity/records.json, which are synthetic placeholders:",
+    "",
+    "    scripts/nds-identity.py capture --phase deploy \\",
+    "        --results-dir results/<run> --host <bench-ip>",
+    "",
+    "then paste the resulting version/revision/arch/binary_sha256 here with the",
+    "campaign tag and the evidence path that proves it was reviewed.",
+    "",
+    "Every field is optional per entry, but the fields you omit stop being checked:",
+    "omit `revision` and a packaging-only rebuild will still match, which is exactly",
+    "the ambiguity this card exists to remove. Record version + revision + arch +",
+    "binary hashes."
+  ],
+  "schema_version": 1,
+  "source": "config/nds-qualification.json",
+  "qualified": {}
+}

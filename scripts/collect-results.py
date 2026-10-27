@@ -10,6 +10,12 @@ import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
+REPO_ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from lib import nds_identity  # noqa: E402  (path set above)
+
 
 def parse_junit(xml_path, runner_name):
     """Parse a JUnit XML file and return a runner dict + list of test dicts."""
@@ -471,6 +477,12 @@ def main():
                         help="Test tier (api, captive-portal, luci-ui)")
     parser.add_argument("--scope", default=None,
                         help="Test scope (quick, full)")
+    parser.add_argument("--nds-qualification", default=None,
+                        help="Qualification manifest naming the expected nodogsplash identity "
+                             "(default: $TOLLGATE_NDS_QUALIFICATION)")
+    parser.add_argument("--require-nds-identity", action="store_true", default=False,
+                        help="Release gate: a nodogsplash identity that is not VERIFIED fails "
+                             "the run (a missing version/hash is never a pass)")
     args = parser.parse_args()
 
     run_dir = os.path.abspath(args.run_dir)
@@ -609,6 +621,31 @@ def main():
             for field in ("build_time", "openwrt_version", "go_version"):
                 if version_info.get(field):
                     sut[field] = version_info[field]
+
+    # --- dependency identity (PRTA: nds_dependency_identity) ---------------
+    # A green NDS run certifies nothing unless it names the nodogsplash package
+    # revision and binary hashes it exercised.  The evidence is captured by the
+    # run itself (lib/nds_identity.py, written under raw/nds-identity/); this
+    # collects it into sut.dependencies.nodogsplash and, when the release gate
+    # is on, refuses to call an unverified identity a pass.
+    try:
+        qualification = nds_identity.load_qualification(args.nds_qualification)
+    except nds_identity.NdsIdentityError as exc:
+        qualification = {}
+        print(f"WARNING: {exc}", file=sys.stderr)
+    before, after = nds_identity.load_run_identity(run_dir)
+    dependency = nds_identity.build_dependency_block(
+        before,
+        after,
+        qualification=qualification,
+        release_evidence=args.require_nds_identity,
+    )
+    sut.setdefault("dependencies", {})[nds_identity.NDS_PACKAGE] = dependency
+    nds_gate_failed = args.require_nds_identity and dependency["status"] != "VERIFIED"
+    if nds_gate_failed and overall_status == "passed":
+        overall_status = "failed"
+    for problem in dependency["problems"]:
+        print(f"WARNING: nodogsplash identity: {problem}", file=sys.stderr)
 
     test_suite = {
         "repo": "OpenTollGate/physical-router-test-automation",
@@ -752,6 +789,16 @@ def main():
 
     if not runners:
         sys.exit(2)
+
+    # The dependency-identity gate is a RELEASE gate: --allow-failures is about
+    # test flakiness, never about "we could not name the package we tested".
+    if nds_gate_failed:
+        print(
+            "==> nodogsplash identity NOT VERIFIED — --require-nds-identity refuses to "
+            "report this run as release evidence",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if overall_status == "failed" and not args.allow_failures:
         sys.exit(1)

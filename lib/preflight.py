@@ -122,6 +122,51 @@ class RouterProbe:
     tollgate_version: str = ""
     tollgate_running: bool = False
     nodogsplash_running: bool = False
+    # Nodogsplash identity: a green NDS run must name the package it tested, so
+    # the probe records version+revision (not just "is it running").  Empty
+    # means the identity could not be established — never assume a version.
+    nodogsplash_version: str = ""
+    nodogsplash_revision: str = ""
+    nodogsplash_manager: str = ""
+    nodogsplash_arch: str = ""
+
+
+def probe_nds_identity(run_ssh: RunSsh) -> dict:
+    """Package-level NDS identity for a probe row (cheap; no hashing).
+
+    Full evidence capture (binary hashes, enforcement fragments, deploy-vs-
+    teardown drift) lives in :mod:`lib.nds_identity` and is driven by
+    ``scripts/nds-identity.py``; this only answers "which nodogsplash is on
+    this box" so a preflight row can never again say just ``running``.
+    """
+    from lib import nds_identity
+
+    evidence: dict = {}
+    out = {
+        "nodogsplash_version": "",
+        "nodogsplash_revision": "",
+        "nodogsplash_manager": "",
+        "nodogsplash_arch": "",
+    }
+    try:
+        manager = nds_identity.detect_package_manager(run_ssh, evidence)
+    except Exception:
+        return out
+    out["nodogsplash_manager"] = manager
+    try:
+        parsed = nds_identity.parse_package_version(
+            run_ssh(nds_identity.package_version_command(manager)), manager
+        )
+    except Exception:
+        parsed = {}
+    out["nodogsplash_version"] = parsed.get("full", "")
+    out["nodogsplash_revision"] = parsed.get("revision", "")
+    try:
+        arch = run_ssh(nds_identity.arch_command(manager)).strip().splitlines()
+    except Exception:
+        arch = []
+    out["nodogsplash_arch"] = arch[0].strip() if arch else ""
+    return out
 
 
 def probe_router(router_id: str, entry: dict, run_ssh: RunSsh | None = None) -> RouterProbe:
@@ -164,6 +209,8 @@ def probe_router(router_id: str, entry: dict, run_ssh: RunSsh | None = None) -> 
     ).strip()
     probe.tollgate_running = bool(safe("pidof tollgate-wrt").strip())
     probe.nodogsplash_running = bool(safe("pidof nodogsplash").strip())
+    for key, value in probe_nds_identity(run_ssh).items():
+        setattr(probe, key, value)
     return probe
 
 
@@ -294,6 +341,19 @@ def _yes_no(flag: bool) -> str:
     return "YES " if flag else "NO  "
 
 
+def _nds_descriptor(row: dict) -> str:
+    """``5.0.2-r2/running`` — the preflight row names the package it saw.
+
+    An unidentified daemon reads ``running/unidentified`` rather than ``running``:
+    "up, but I cannot tell you which build" is a different fact from "up".
+    """
+    version = row.get("nodogsplash_version") or ""
+    running = bool(row.get("nodogsplash_running"))
+    if version:
+        return f"{version}/running" if running else f"{version}/DOWN"
+    return "running/unidentified" if running else "down"
+
+
 def format_checklist(snapshot: dict) -> str:
     lines = [f"=== PRTA Preflight — {snapshot.get('generated_at', '?')} ==="]
 
@@ -315,7 +375,7 @@ def format_checklist(snapshot: dict) -> str:
             f"fw={r.get('firmware') or '-'}",
             f"tollgate={r.get('tollgate_version') or '-'}"
             + ("/running" if r.get("tollgate_running") else "/DOWN"),
-            "nds=" + ("running" if r.get("nodogsplash_running") else "down"),
+            "nds=" + _nds_descriptor(r),
         ]
         lines.append("  " + "  ".join(bits))
         ssids = r.get("ssids") or []

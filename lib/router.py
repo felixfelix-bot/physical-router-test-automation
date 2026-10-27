@@ -1252,6 +1252,34 @@ class Router:
             except Exception:
                 pass
 
+    def capture_nds_identity(self, results_dir: str, phase: str):
+        """Record which nodogsplash this router is actually running.
+
+        Called twice per session — after deploy and again before teardown — so
+        ``scripts/collect-results.py`` can name the package revision the tests
+        exercised and report drift between the two snapshots.  See
+        lib/nds_identity.py for the contract; this is only the SSH plumbing.
+
+        Returns the snapshot (or, on a hard identity error, a snapshot whose
+        ``problems`` say why).  Never raises: a run whose identity cannot be
+        captured must still finish, and must then report NOT VERIFIED.
+        """
+        from lib import nds_identity
+
+        def run_ssh(cmd: str) -> str:
+            return self.ssh(cmd, timeout=15)
+
+        identity = nds_identity.capture(run_ssh, phase=phase)
+        nds_identity.write_snapshot(results_dir, identity)
+        if identity.problems:
+            log.warning(
+                "NDS identity (%s) captured with %d problem(s): %s",
+                phase, len(identity.problems), "; ".join(identity.problems),
+            )
+        else:
+            log.info("NDS identity (%s): %s", phase, identity.summary_line())
+        return identity
+
     # -- Migration helpers (promoted from scenario tests) --
 
     def ssh_bool(self, cmd: str, timeout: int = 30) -> bool:

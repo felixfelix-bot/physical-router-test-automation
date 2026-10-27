@@ -1,0 +1,72 @@
+{
+  "_comment": [
+    "Recorded nodogsplash identity evidence, used by tests/unit/test_nds_identity.py.",
+    "Every string here is byte-shaped like real router output, transcribed from the",
+    "sources named in each block \u2014 no router was involved in producing this file.",
+    "ndsctl_status: nodogsplash v5.0.2 src/util.c::ndsctl_status() (fprintf format",
+    "  strings: '==================\\nNoDogSplash Status\\n====\\n' then 'Version: ' VERSION).",
+    "package_version: OpenWrt packages/net/nodogsplash/Makefile (PKG_VERSION:=5.0.2,",
+    "  PKG_RELEASE:=2) \u2192 apk names it nodogsplash-5.0.2-r2; opkg prints",
+    "  'nodogsplash - 5.0.2-r2'.",
+    "binary_sha256 / nds_config / enforcement_fragments: SYNTHETIC placeholders.",
+    "  They are internally consistent (the digest of the fixture's own text) so the",
+    "  drift and mismatch controls are meaningful; they do NOT hash any real binary.",
+    "  Capture the real ones on the bench with the TODO(unverified) commands in",
+    "  lib/nds_identity.py before seeding a qualification manifest.",
+    "The sha256 values are sha256('fixture-only:<label>') \u2014 real 64-hex digests, distinct per flavour, and deliberately not the digest of any real binary."
+  ],
+  "apk": {
+    "router": "bench-mt3000-25 (OpenWrt 25.12.5, apk)",
+    "responses": {
+      "command -v apk": "/usr/bin/apk\n",
+      "command -v opkg": "",
+      "apk info -v 2>/dev/null | grep -i '^nodogsplash'": "nodogsplash-5.0.2-r2\n",
+      "apk --print-arch 2>/dev/null": "aarch64_cortex-a53\n",
+      "ndsctl status 2>/dev/null": "==================\nNoDogSplash Status\n====\nVersion: 5.0.2\nUptime: 0d 0h 12m 31s\nGateway Name: TollGate\nManaged interface: br-lan\nManaged IP range: 10.99.99.1/24\nServer listening: http://10.99.99.1:2050\nBinauth: Disabled\nPreauth: Disabled\nClient Check Interval: 15s\nAuth Idle Timeout: 120m\nSession Timeout: 0m\nBlock after Session timed out: no\nTraffic control: no\nTotal download: 482 kByte; avg: 5.12 kbit/s\nTotal upload: 61 kByte; avg: 0.65 kbit/s\n====\nClient authentications since start: 3\n",
+      "sha256sum /usr/bin/nodogsplash /usr/bin/ndsctl 2>/dev/null": "533e347765f7f5be26273cca0c60ae409432009f697e3a976cd411e65f1733fa  /usr/bin/nodogsplash\n439acf92e5f95e42830dd8cf26df56b9ea4096246a667dde380ca7ca632ca4f0  /usr/bin/ndsctl\n",
+      ". /etc/openwrt_release 2>/dev/null; echo \"$DISTRIB_ID|$DISTRIB_RELEASE|$DISTRIB_TARGET|$DISTRIB_ARCH|$DISTRIB_DESCRIPTION\"": "OpenWrt|25.12.5|mediatek/filogic|aarch64_cortex-a53|OpenWrt 25.12.5 r33051-f5dae5ece4\n",
+      "uname -r": "6.12.55\n",
+      "apk info -v 2>/dev/null | grep -i '^firewall4'; nft --version 2>/dev/null; iptables -V 2>/dev/null": "firewall4-2025.03.17~b6e9d4b2-r1\nnftables v1.1.1 (Commodore Bullmoose #1)\niptables v1.8.11 (nf_tables)\n",
+      "sha256sum /etc/config/nodogsplash 2>/dev/null": "5eac651dc2b6aa463e597080f3697a5cc1fa211c3803cd5894abb5c92eabd35a  /etc/config/nodogsplash\n",
+      "( iptables -S 2>/dev/null; iptables -t mangle -S 2>/dev/null ) | grep -E '^(-N|-A|-P|-X) nds' || true": "-N ndsNET\n-N ndsRTR\n-N ndsOUT\n-N ndsAUT\n-N ndsBLK\n-N ndsTRU\n-A ndsNET -m mark --mark 0x20000/0x30000 -j ACCEPT\n-A ndsNET -j ndsAUT\n-A ndsRTR -p udp --dport 67 -j ACCEPT\n-A ndsRTR -p udp --dport 68 -j ACCEPT\n-A ndsRTR -m mark --mark 0x10000/0x10000 -j REJECT\n-A ndsOUT -s 10.99.99.186/32 -m mac --mac-source de:54:4e:91:49:da -j MARK --set-xmark 0x30000/0x30000\n",
+      "for f in /etc/nftables.d/*; do case \"$f\" in *nds*) echo \"--- $f\"; cat \"$f\"; esac; done 2>/dev/null || true": "--- /etc/nftables.d/20-nds-enforce.nft\nchain nds_enforce_forward {\n    type filter hook forward priority -1; policy accept\n    meta nfproto ipv4 iifname \"br-lan\" meta mark & 0x00030000 == 0x00010000 counter drop\n    meta nfproto ipv4 iifname \"br-lan\" meta mark & 0x00030000 == 0x00020000 counter accept\n}\n"
+    }
+  },
+  "opkg": {
+    "router": "covr-x1860 (OpenWrt 24.10.1, opkg)",
+    "responses": {
+      "command -v apk": "",
+      "command -v opkg": "/bin/opkg\n",
+      "opkg list-installed nodogsplash 2>/dev/null": "nodogsplash - 5.0.2-r1\n",
+      "opkg print-architecture 2>/dev/null | tail -1 | awk '{print $2}'": "mipsel_24kc\n",
+      "ndsctl status 2>/dev/null": "==================\nNoDogSplash Status\n====\nVersion: 5.0.2\nUptime: 3d 4h 1m 12s\nGateway Name: TollGate\nManaged interface: br-lan\nServer listening: http://10.99.99.1:2050\nBinauth: Disabled\nPreauth: Disabled\nClient Check Interval: 15s\nAuth Idle Timeout: 120m\nSession Timeout: 0m\nTotal download: 18204 kByte; avg: 41.02 kbit/s\nTotal upload: 1902 kByte; avg: 4.28 kbit/s\n====\nClient authentications since start: 11\n",
+      "sha256sum /usr/bin/nodogsplash /usr/bin/ndsctl 2>/dev/null": "76fe04818718914b4e9cb170177813af4cdf3c0756bd75c0e94ff4723252d407  /usr/bin/nodogsplash\n0b8addc7606f3babab53140492ce66cec1ce68d14f157811a7bc3603df837ddb  /usr/bin/ndsctl\n",
+      ". /etc/openwrt_release 2>/dev/null; echo \"$DISTRIB_ID|$DISTRIB_RELEASE|$DISTRIB_TARGET|$DISTRIB_ARCH|$DISTRIB_DESCRIPTION\"": "OpenWrt|24.10.1|ramips/mt7621|mipsel_24kc|OpenWrt 24.10.1 r28597-0425664679\n",
+      "uname -r": "6.6.73\n",
+      "opkg list-installed firewall4 2>/dev/null; nft --version 2>/dev/null; iptables -V 2>/dev/null": "firewall4 - 2024.12.18~8db62e36-r1\nnftables v1.0.9 (Old Doc Yak #3)\niptables v1.8.9 (nf_tables)\n",
+      "sha256sum /etc/config/nodogsplash 2>/dev/null": "7d54dafbedcb0589b689a27320445194666c26672a0a64712073c7c8faf26305  /etc/config/nodogsplash\n",
+      "( iptables -S 2>/dev/null; iptables -t mangle -S 2>/dev/null ) | grep -E '^(-N|-A|-P|-X) nds' || true": "-N ndsNET\n-N ndsRTR\n-N ndsOUT\n-N ndsAUT\n-N ndsBLK\n-N ndsTRU\n-A ndsNET -m mark --mark 0x20000/0x30000 -j ACCEPT\n-A ndsNET -j ndsAUT\n-A ndsRTR -m mark --mark 0x10000/0x10000 -j REJECT\n",
+      "for f in /etc/nftables.d/*; do case \"$f\" in *nds*) echo \"--- $f\"; cat \"$f\"; esac; done 2>/dev/null || true": ""
+    }
+  },
+  "qualification": {
+    "_comment": "A qualification manifest naming the apk fixture's identity, for the pass case.",
+    "schema_version": 1,
+    "source": "config/nds-qualification.json (fixture)",
+    "qualified": {
+      "nodogsplash": {
+        "version": "5.0.2",
+        "revision": "r2",
+        "arch": "aarch64_cortex-a53",
+        "daemon_version": "5.0.2",
+        "binary_sha256": {
+          "nodogsplash": "533e347765f7f5be26273cca0c60ae409432009f697e3a976cd411e65f1733fa",
+          "ndsctl": "439acf92e5f95e42830dd8cf26df56b9ea4096246a667dde380ca7ca632ca4f0"
+        },
+        "campaign": "v0.6.0-alpha4-pre17",
+        "qualified_on": "2026-10-20",
+        "evidence": "fixture only \u2014 see the TODO(unverified) note in lib/nds_identity.py"
+      }
+    }
+  }
+}
