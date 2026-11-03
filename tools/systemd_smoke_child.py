@@ -1,0 +1,91 @@
+"""Harmless isolation probe. Not a PRTA runner; never contacts external peers."""
+import errno
+import subprocess
+import json
+import os
+from pathlib import Path
+import signal
+import socket
+import time
+
+
+def check_identity():
+    # Approved policy: primary GID repeated in supplementary groups adds no access.
+    assert os.getresuid() == (65534, 65534, 65534), os.getresuid()
+    assert os.getresgid() == (65534, 65534, 65534), os.getresgid()
+    assert set(os.getgroups()) <= {65534}, os.getgroups()
+
+
+def path_denial(path):
+    """Protected HOME only: report explicit denial; never swallow other I/O."""
+    try:
+        os.stat(path)
+    except OSError as exc:
+        if exc.errno not in (errno.ENOENT, errno.EACCES, errno.EPERM):
+            raise
+        return errno.errorcode[exc.errno]
+    raise AssertionError('forbidden path accessible: ' + str(path))
+
+
+def main():
+    import labgrid
+    import pytest
+
+    check_identity()
+    status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
+    for name in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb'):
+        assert int(status[name].strip(), 16) == 0, (name, status[name])
+    assert status['NoNewPrivs'].strip() == '1'
+    print(json.dumps({'identity': {'uid': os.getresuid(), 'gid': os.getresgid(), 'groups': os.getgroups()}, 'capabilities': {k: status[k].strip() for k in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb', 'NoNewPrivs')}}), flush=True)
+    interfaces = [line.split(':')[0].strip() for line in Path('/proc/self/net/dev').read_text().splitlines()[2:]]
+    assert interfaces == ['lo'], interfaces
+    print(json.dumps({'home_denials': {p: path_denial(p) for p in ('/home/c08r4d0r', '/root/.ssh')}}), flush=True)
+    for path in ('/usr/bin/ssh', '/bin/ssh', '/bin/sh', '/run/ssh-agent', '/dev/ttyUSB0', '/dev/ttyACM0'):
+        assert not Path(path).exists(), path
+    for executable in ('/usr/bin/ssh', '/bin/ssh', '/bin/sh', '/runtime/bin/ssh', '/runtime/bin/sh', '/runtime/bin/bash'):
+        try:
+            subprocess.run([executable, '--version'], check=False, timeout=2)
+        except FileNotFoundError:
+            pass
+        else:
+            raise AssertionError('forbidden executable available: ' + executable)
+    print(json.dumps({'reached': 'home and executable exclusions'}), flush=True)
+    assert not any(Path('/dev').glob('ttyUSB*'))
+    assert not any(Path('/dev').glob('ttyACM*'))
+    assert not any('SSH' in k or 'TOKEN' in k or 'KEY' in k for k in os.environ)
+    for path in ('/source/systemd_smoke_child.py', '/runtime/bin/python3'):
+        try:
+            fd = os.open(path, os.O_WRONLY)
+        except OSError as exc:
+            assert exc.errno in (errno.EROFS, errno.EACCES, errno.EPERM), exc
+        else:
+            os.close(fd)
+            raise AssertionError('writable source/runtime')
+    with socket.socket() as server, socket.socket() as client:
+        server.settimeout(3)
+        client.settimeout(3)
+        server.bind(('127.0.0.1', 0))
+        server.listen(1)
+        client.connect(server.getsockname())
+        peer, _ = server.accept()
+        with peer:
+            peer.settimeout(3)
+            client.sendall(b'private-smoke')
+            assert peer.recv(32) == b'private-smoke'
+            peer.sendall(b'ok')
+            assert client.recv(2) == b'ok'
+    print(json.dumps({'reached': 'serial/environment exclusions, read-only source/runtime, loopback roundtrip'}), flush=True)
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.alarm(45)
+        print(json.dumps({'descendant_pid': os.getpid(), 'sid': os.getsid(0), 'cgroup': Path('/proc/self/cgroup').read_text()}), flush=True)
+        time.sleep(40)
+        os._exit(99)
+    print(json.dumps({'probe': 'PASS', 'interfaces': interfaces, 'imports': [labgrid.__name__, pytest.__name__], 'pid': os.getpid(), 'descendant': pid, 'environment_keys': sorted(os.environ)}), flush=True)
+    time.sleep(10)
+
+
+if __name__ == '__main__':
+    main()
