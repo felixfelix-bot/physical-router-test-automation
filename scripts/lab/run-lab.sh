@@ -198,8 +198,16 @@ cmd_down() {
   # stop-poc removes the tap/bridge but not a macvlan client we may have added.
   sudo ip link del lab-client 2>/dev/null || true
   if [ -f "$LAB_DIR/run/cdk-mintd.pid" ]; then
-    kill "$(cat "$LAB_DIR/run/cdk-mintd.pid")" 2>/dev/null || true
-    rm -f "$LAB_DIR/run/cdk-mintd.pid"
+    # Do not kill a mint this lab ADOPTED: it belongs to another lab dir (or a
+    # hand-run session) and its db lives elsewhere. Measured on a clean-dir run:
+    # the adopted mint was ~/cdk-mint serving ~/meshlink-lab/mint, so an
+    # unconditional kill here would take out someone else's running lab.
+    if [ -f "$LAB_DIR/run/cdk-mintd.adopted" ]; then
+      log "leaving adopted mint pid=$(cat "$LAB_DIR/run/cdk-mintd.pid") running (not ours)"
+    else
+      kill "$(cat "$LAB_DIR/run/cdk-mintd.pid")" 2>/dev/null || true
+    fi
+    rm -f "$LAB_DIR/run/cdk-mintd.pid" "$LAB_DIR/run/cdk-mintd.adopted"
   fi
   log "down"
 }

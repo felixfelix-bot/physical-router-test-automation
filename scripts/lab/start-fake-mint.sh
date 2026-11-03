@@ -45,12 +45,19 @@ if existing="$(curl -sf -m 3 "http://127.0.0.1:${PORT}/v1/info" 2>/dev/null)"; t
   owner="$(ss -ltnpH "sport = :${PORT}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
   if [ -n "$owner" ]; then
     printf '%s\n' "$owner" > "$PID"
+    # Record that this process belongs to SOMEONE ELSE's lab dir. Teardown must
+    # not kill it: measured on a clean-dir run, the adopted mint was
+    # ~/cdk-mint/cdk-mintd serving ~/meshlink-lab/mint, and `down` from the new
+    # lab would have taken out a different lab's mint mid-run.
+    printf '%s\n' "$owner" > "$LAB/run/cdk-mintd.adopted"
   fi
   echo "mint already serving on :${PORT} (adopted pid=${owner:-unknown} ${pk})"
   echo "WARNING: this is NOT the mint this lab dir started; its db lives elsewhere." >&2
+  echo "         It will NOT be stopped by 'run-lab.sh down' (recorded as adopted)." >&2
   echo "         Stop it first if you need a clean mint: kill ${owner:-<pid>}" >&2
   exit 0
 fi
+rm -f "$LAB/run/cdk-mintd.adopted"
 
 export CDK_MINTD_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 

@@ -282,3 +282,42 @@ def test_smoke_hard_timeout_exceeds_the_readiness_deadline():
         "a fixed hard timeout equal to the readiness deadline reintroduces the bug"
     )
     assert '--timeout="$hard"' in smoke, "the derived hard timeout must be used"
+
+
+# ── 6. teardown must not kill a process another lab dir is using ────────────
+
+def test_teardown_spares_an_adopted_mint():
+    """`down` must not kill a mint that this lab dir only ADOPTED.
+
+    Measured on a clean-dir run: :8383 was already owned by
+    `~/cdk-mint/cdk-mintd --work-dir ~/meshlink-lab/mint` — a different lab's
+    mint. start-fake-mint.sh adopted it (correctly, so the run could proceed),
+    but `down` then killed whatever pid was in the pidfile, which would take out
+    someone else's running lab. The distinction must be recorded at adopt time
+    and honoured at teardown.
+    """
+    mint = _read(LAB / "start-fake-mint.sh")
+    assert "cdk-mintd.adopted" in mint, (
+        "start-fake-mint.sh must record that the mint it adopted is not its own"
+    )
+    body = _read(RUN_LAB)
+    down = body[body.index("cmd_down()"):body.index("cmd_status()")]
+    assert "cdk-mintd.adopted" in down, (
+        "cmd_down must consult the adopted marker before killing the mint"
+    )
+    assert "leaving adopted mint" in down, (
+        "an adopted mint must be left running, and said so out loud"
+    )
+
+
+def test_teardown_spares_an_adopted_dns_forwarder():
+    """Same class for the resolver: lab-dns.sh adopts an orphan holding :53 on
+    the shared lab bridge, and must not kill it on stop."""
+    dns = _read(DNS)
+    assert "lab-dns.adopted" in dns, (
+        "lab-dns.sh must record that an adopted forwarder is not its own"
+    )
+    stop = dns[dns.index("cmd_stop()"):]
+    assert "leaving adopted forwarder running" in stop, (
+        "stop must not kill a forwarder it merely adopted"
+    )

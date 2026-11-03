@@ -74,6 +74,9 @@ cmd_start() {
   if orphan="$(listener_pid)" && [ -n "$orphan" ]; then
     mkdir -p "$LAB/run"
     printf '%s\n' "$orphan" > "$LAB/run/lab-dns.pid"
+    # Record that we did not start it, so `stop` does not take out a forwarder
+    # some other lab dir (or a hand-run session) is relying on.
+    printf '%s\n' "$orphan" > "$LAB/run/lab-dns.adopted"
     log "adopted existing forwarder pid=$orphan on $ADDR:53"
     return 0
   fi
@@ -129,6 +132,11 @@ cmd_start() {
 }
 
 cmd_stop() {
+  if [ -f "$LAB/run/lab-dns.adopted" ]; then
+    log "leaving adopted forwarder running (not started by this lab dir)"
+    sudo rm -f "$LAB/run/lab-dns.pid" "$LAB/run/lab-dns.adopted" "$UDEV" 2>/dev/null || true
+    return 0
+  fi
   if pid="$(running_pid)"; then
     sudo kill "$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
     log "stopped pid=$pid"

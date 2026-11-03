@@ -252,7 +252,14 @@ scripts/lab/run-lab.sh down
 ```
 
 Removes the VMs via `stop-poc`, deletes the `lab-client` macvlan, and stops the
-mint. If something was left behind:
+mint and the lab resolver — **unless this lab dir adopted them**. `up` will
+happily reuse a `:8383` mint or a `:53` forwarder that another lab dir (or a
+hand-run session) started; those are recorded as adopted and left running, with
+a line saying so. Measured: a clean-dir run adopted
+`~/cdk-mint/cdk-mintd --work-dir ~/meshlink-lab/mint`, and the old teardown
+would have killed it out from under that other lab.
+
+If something was left behind:
 
 ```bash
 sudo pkill -f 'qemu-system-x86_64.*tollgate-poc'
