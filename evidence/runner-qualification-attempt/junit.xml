@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="4.723" timestamp="2026-11-03T23:10:06.719922+01:00" hostname="x280"><testcase classname="tests.qualification.empty_place_child" name="test_empty_place_handoff" time="1.873"><failure message="tests/qualification/empty_place_child.py:25: in test_empty_place_handoff&#10;    assert owner == os.environ[&quot;TOLLGATE_FLEET_CLAIM_OWNER&quot;]&#10;E   AssertionError: assert 'User     Hos...:10:07.078087' == 'qualification/fixture'&#10;E     &#10;E     - qualification/fixture&#10;E     + User     Host           Place                Changed                   &#10;E     + fixture  qualification  qualification-empty  2026-11-03 23:10:07.078087&#10;&#10;=== DEBUG ON FAILURE ===&#10;ndsctl state: &#10;session: {'raw': ''}&#10;global IPv6 on br-lan: ">tests/qualification/empty_place_child.py:25: in test_empty_place_handoff
+    assert owner == os.environ["TOLLGATE_FLEET_CLAIM_OWNER"]
+E   AssertionError: assert 'User     Hos...:10:07.078087' == 'qualification/fixture'
+E     
+E     - qualification/fixture
+E     + User     Host           Place                Changed                   
+E     + fixture  qualification  qualification-empty  2026-11-03 23:10:07.078087
+
+=== DEBUG ON FAILURE ===
+ndsctl state: 
+session: {'raw': ''}
+global IPv6 on br-lan: </failure></testcase></testsuite></testsuites>

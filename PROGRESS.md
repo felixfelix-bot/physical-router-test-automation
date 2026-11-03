@@ -1,3 +1,26 @@
+# Hardware-free runner qualification attempt — 2026-11-03
+
+Base: `8d52f451bc08e86bfc54a34ad04969539eda3c9f`.
+Branch: `pr/prta-runner-qualification`; isolated worktree.
+
+- Inspected and reused the real-coordinator integration harness client,
+  readiness and cleanup methods; started only a private loopback coordinator,
+  no exporter or resources. Used the real fleet CLI and SQLite authority.
+- Observe-only manifest refused with rc 75, zero allocations and free place.
+- Authorized run reached actual pytest claim handoff and fixture acquisition
+  of a synthetic **empty** place. The child then failed an assertion.
+- Failure reporting attempted SSH to 127.0.0.1 despite `--read-only`.
+  This violated the no-SSH constraint. Execution stopped; no compliant
+  end-to-end pass, renewal proof, throughput claim or goal closure.
+- Coordinator terminated (waited, rc 0); authority row released and runner
+  release evidence says clean_released, owner_after empty.
+- Unsafe draft test/profile archived outside repository, not shipped. This
+  commit changes documentation/evidence only; changed-code coverage is N/A.
+
+See REPORT.md for exact evidence, limitations and safe follow-up requirements.
+
+---
+
 # PROGRESS — endpoint binding (requirement 1 + non-overlap half of 2)
 
 Branch `pr/fleet-endpoint-binding`, worktree `~/worktrees/prta-endpoint-binding`,

@@ -1,0 +1,10 @@
+{
+  "run_id": "20261103T221005Z-qualification-empty-8d52f45",
+  "state": "clean_released",
+  "reason": "released_confirmed",
+  "detail": "place 'qualification-empty' is free after release",
+  "place": "qualification-empty",
+  "owner_after": "",
+  "clean": true,
+  "review": false
+}

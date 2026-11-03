@@ -1,3 +1,85 @@
+# Hardware-free fleet runner qualification: partial evidence, NOT qualified
+
+## Scope and result
+
+Base `8d52f451bc08e86bfc54a34ad04969539eda3c9f`; own branch
+`pr/prta-runner-qualification`. No production source or gates changed.
+The fixture **can acquire an empty synthetic labgrid place**, without an exporter.
+However this attempt did **not** satisfy the requested no-SSH execution boundary:
+a failed child assertion caused automatic failure diagnostics to invoke SSH to
+127.0.0.1. The attempts returned `Permission denied (publickey)`. This is an
+execution-constraint breach, not evidence of DUT access or a compliant pass.
+No protected devices, bench hardware, existing coordinator or VM was targeted;
+no credentials changed and no VM or external-network test was started.
+
+## Real execution evidence
+
+Evidence under `evidence/runner-qualification-attempt/` is copied from actual
+outputs, not synthesized responses. Full local artifacts remain at:
+`/home/c08r4d0r/.hermes/profiles/manager/cache/scratch/prta-qualification-green3/test_fleet_cli_empty_place0/`.
+
+- Real coordinator 26.0.1 on private `127.0.0.1:48557`, no exporter.
+- Real `scripts/run-profile.py --fleet-manifest ... --authority-store ...`,
+  profile-selected pytest child, TTL 6 seconds, `--read-only --client adb`.
+- Observe-only admission: rc **75**, `action_not_permitted`; no child evidence,
+  zero SQLite allocations, coordinator owner empty (outer assertions passed).
+- Authorized run: real reservation fence **1**, real fixture logged
+  `fleet claim handoff honoured` and `acquired place qualification-empty`.
+- Child: **1 failed**, runner rc **1**. Assertion incorrectly treated
+  `LabgridBench.who()` (human-readable table) as an owner string.
+  Correct inspection must use the existing structured ownership reader or
+  coordinator `show` parser. No renewal assertion was reached.
+- Failure hook `tests/conftest.py:1566-1573` invokes `collect_logs` and
+  `_debug_summary` even in read-only mode. Dynamic fixture lookup did not
+  prevent this: `deploy_session` already depends on `router`, so it is in
+  `item.funcargs`. Read-only suppresses deployment, not diagnostics/read SSH.
+- Automatic preflight also ran (default `auto`), inspecting local readiness
+  and reporting no configured routers; this is wider than the desired minimum.
+- After child exit, release.json: `clean_released`, `released_confirmed`,
+  `owner_after: ""`, `clean: true`. Independent read-only SQLite query confirmed
+  the allocation state `released`. Coordinator process PID 3922993 was waited
+  and exited **0**. This proves cleanup for this failed run, not successful work.
+
+## Iterations and tooling
+
+Outer harness reused `Coordinator`, `_binary`, `_wait_for` from
+`tests/integration/test_labgrid_coordinator_real.py`; it did not call `.start()`
+(which would also launch an exporter). The initial expected RED was missing
+`plans/qualification-empty.yaml` (rc 1 rather than admission rc 75). No
+production implementation was added. Subsequent setup issues were an invalid
+client spelling (`android`, corrected to existing `adb`) and missing pytest-html
+in Hermes Python. No network install was attempted: an existing repo venv with
+pytest-html/labgrid was used read-only. Final command:
+
+```sh
+/home/c08r4d0r/repos/physical-router-test-automation/.venv/bin/python -m pytest   --noconftest -o addopts='' tests/integration/test_runner_empty_place_real.py -q   --basetemp=/home/c08r4d0r/.hermes/profiles/manager/cache/scratch/prta-qualification-green3
+```
+
+Actual result: **1 failed in 8.22s**. This command describes the archived attempt,
+not a passing shipped test. Draft profile/outer harness/child were removed from
+this feature tree and archived under manager scratch
+`prta-qualification-draft/`; they are unsafe to replay as written. Documentation
+and raw evidence only are committed, so the changed-executable-code coverage
+requirement is not applicable. No assertion was weakened and no mock was used
+to represent successful end-to-end operation.
+
+## Remaining qualification gaps / next bounded step
+
+1. Establish a fail-closed no-DUT boundary BEFORE pytest session hooks run:
+   explicitly disable preflight and prevent both SSH execution and external
+   network access on every outcome. Do not replace coordinator/authority/fixture
+   with mocks. A narrow fixture option must be RED-first if implemented.
+2. Correct ownership assertion using structured state, keep assertion failures
+   safe, then demonstrate child success and same-fence TTL extension beyond TTL.
+3. Assert parsed JUnit test/pass counts, process cleanup, post-release owner,
+   released SQLite state and exact `clean_released` release verdict.
+4. Add real authority capacity refusal and failure/lease-loss cases. This attempt
+   proves manifest refusal only, not capacity contention.
+5. No physical workload, exporter forwarding, concurrent scheduling, throughput,
+   production readiness or full fleet qualification is established here.
+
+---
+
 # Resume audit reporting corrections (2026-11-03)
 
 Base `6ccb3df6e7d8dfc8b554ea25473b2ec8d1f9299d`, fetched from
