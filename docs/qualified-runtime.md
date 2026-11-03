@@ -1,6 +1,69 @@
 # Qualified runtime milestone: import-ready, NOT fleet-qualified
 
-## REPORT (2026-11-04)
+## REPORT / PROGRESS — offline security remediation (2026-11-04)
+
+R1: launcher now owns a dedicated process group, handles timeout, nonzero setup
+exit and interruption, and runs TERM/KILL, leader reap and group-absence checks
+BEFORE removing staging. Permission errors, surviving groups and interrupted
+spawn with unknown child identity retain staging and raise an explicit
+QUARANTINED failure. Repeated INT/TERM is masked during cleanup. There is no
+TemporaryDirectory finalizer that can blindly delete an active runtime root.
+A pre-spawn preparation failure can remove staging because no process exists.
+
+This is **not proof of privileged descendant containment**: an unprivileged
+launcher may not signal root descendants; it then retains the root. Group
+absence only establishes death of members of that group. The trusted command
+chain must not create surviving children in other sessions/groups (sudo policy
+may affect session topology); unshare's kill-child remains an additional
+control, not an offline proof. SIGKILL/power loss cannot run Python cleanup and
+leave staging behind. No privileged execution is authorized by these tests.
+
+R2: setup/probe/inventory are import-safe. OS, subprocess, import and socket
+doubles exercise privilege order, cap/NNP failure, descriptor closure, mount
+failure, probe negative controls, import/ldd failures and inventory mapping.
+Launcher tests cover timeout, interruption, spawn/setup failure, nonzero exit,
+failed quiescence, preparation failure and invalid manifest roots. All effects
+that could touch privileges, payload imports or network are doubled.
+
+Reproduce only offline tests (existing environment; no installs):
+
+```sh
+TMPDIR="$HOME/.hermes/profiles/manager/cache/scratch" \
+  "$HOME/.hermes/hermes-agent/venv/bin/python3" -I -B tests/runtime_offline_coverage.py
+```
+
+Result: **20 unittest tests + 10 manifest pytest cases pass**. Stdlib trace
+executable lines, excluding synthetic line zero, across ALL five production
+scripts: helper **30/30**, inventory **31/32**, launcher **91/92**, probe
+**29/30**, setup **17/18**; **198/202 = 98.02% aggregate**. Uncovered lines are
+CLI main invocations. This is not branch coverage or actual namespace evidence.
+The runner loads only named tests and disables pytest plugins/conftest discovery.
+RED observed before refactoring: top-level launcher import failed (argv access),
+three component import-safety subtests failed with all effects mocked. The
+interrupted-spawn regression subsequently failed with KeyboardInterrupt and
+root removal before quarantine handling was added. One preparation-test fixture
+initially counted its inventory JSON as a staging directory; corrected to count
+directories only, without changing production behavior.
+
+**R3 remains an operational blocker, not hardened:** setup script and parent
+paths are mutable by the caller; root staging is caller-owned. No immutable
+root-controlled snapshot, ownership/digest revalidation or race-resistant path
+handling was implemented. Before any future separately approved privileged run,
+an operator must independently verify reviewed inputs and no concurrent writers.
+Never grant restricted passwordless sudo/setuid status to this tool.
+
+**R4 remains manual approval, not hardened:** suffix admission is not semantic
+classification or provenance. An operator must approve the exact manifest,
+source content, interpreter/native libraries and hashes before execution;
+review must reject disguised shell/SSH code and embedded secrets. The launcher
+does not implement an approval signature or exact approved-source allowlist.
+
+Remaining gate: independent cold security review of this delta and explicit
+resolution/acceptance of privileged topology and R3/R4 trust preconditions.
+No sudo, namespaces, actual inventory/payload imports, real transport/coordinator,
+hardware or integration were executed for this remediation. Feature branch only.
+
+## Historical REPORT (2026-11-04; not rerun by offline remediation)
 
 Base: c07aa605. Actual disposable-root child completed with exit 0:
 `CONTROLS_PASS LOOPBACK_PASS`, then imports of labgrid.remote.coordinator,
