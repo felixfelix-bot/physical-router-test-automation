@@ -1,0 +1,8 @@
+Unprivileged parser-only dependency preflight, NOT runner trial.
+Interpreter: /home/c08r4d0r/.hermes/hermes-agent/venv/bin/python3
+Invocation: env -u PYTHONOPTIMIZE PYTHONDONTWRITEBYTECODE=1 python3 -I -B -m pytest --noconftest -c /dev/null --collect-only --html=/nonexistent-prta-preflight/report.html --self-contained-html /nonexistent-prta-preflight/test.py
+Exit code: 4
+ERROR: usage: python -m pytest [options] [file_or_dir] [file_or_dir] [...]
+python -m pytest: error: unrecognized arguments: --html=/nonexistent-prta-preflight/report.html --self-contained-html
+  inifile: /dev/null
+  rootdir: /dev

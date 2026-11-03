@@ -1,3 +1,17 @@
+# Managed runner trial preflight — blocked, no live attempt (2026-11-04)
+
+Own branch `pr/managed-runner-trial` from reviewed `2aa132b` (includes `c07aa605`).
+Reviewed Python 3.11 runtime lacks pytest_html and pytest_metadata. Real parser
+probe rejects run-profile's unconditional HTML flags with rc4. The separately
+installed Python 3.12 packages are not a reviewed/verified 3.11 runtime closure.
+Stopped before copying/staging/privileged launch under the missing-dependency
+rule. No new code, installs, policy changes, coordinator/SSH/hardware, or
+old-quarantine changes. Lifecycle acceptance remains unexecuted; the single
+approved attempt remains unused. See `docs/managed-runner-trial.md` and raw
+`evidence/managed-runner-trial/dependency-preflight.txt` for precise gaps.
+
+---
+
 # PROGRESS — collection admission remediation
 
 - Required/router early-return reproduced RED with actual pytest: child `1 passed`,
