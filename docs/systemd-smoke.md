@@ -114,3 +114,55 @@ This conservative offline count excludes untraced discovery/imports and the
 privileged smoke. No >=80% aggregate coverage claim. Full orchestration error-path
 tests, independent review, real runner closure/lifecycle qualification remain
 outstanding. No integration/upstream PR or router acceptance proof.
+
+## Offline finish (supersedes the coverage limitation above)
+
+No new live trial was run. `python3 tools/trace_systemd_smoke.py` now discovers
+`test_systemd_smoke*.py`: **30 tests pass**, aggregate **172/215 = 80.00%**
+across both complete production executable files (manager 108/137, child 64/78).
+The denominator is stdlib trace's conservative executable-line set, including
+untraced module imports/definitions and CLI guards; it is not helper-only or
+changed-hunk coverage. Tests and trace reporting code are not production targets.
+All service commands, cgroup paths, fork/signal/socket operations are doubles;
+only scratch staging files are real. No installs or privileged execution.
+
+RED before corrections: eight failed subcases exposed acceptance of success,
+exit-code and timeout-extra results; polling deadline mistaken for success;
+incomplete live cgroup capture permitting deletion; and lost evidence on staging,
+stop or journal errors. Corrections preserve a quarantine record before staging,
+write final evidence even when cleanup fails, require populated live evidence
+before authorizing cleanup, and require exact expected terminal properties.
+Tests also assert no deletion for unknown/populated/nonempty groups, deletion
+ordering after disappearance/recursive emptiness, child SID/cgroup/membership,
+probe and kill evidence, plus child main-path and negative assertion behavior.
+Logs: `~/reports/reviews/prta-smoke-offline-red.txt` and
+`~/reports/reviews/prta-smoke-offline-green.txt`.
+
+Re-read actual evidence4 JSON SHA256:
+`a783b94c17ab00bcd7306e8c18dba7e12d9ed8abfc2cd916bfead6b2806e7c4e`.
+It contains active InvocationID `f12d2d926c55483ca7bc93e821621942`, the exact
+unit cgroup, PID=SID 4040450 in recursive samples and its matching self-report,
+and manager journal SIGKILL for that PID. Terminal Result=timeout,
+ExecMainCode=1, ExecMainStatus=0, ActiveState=failed, SubState=failed matches the
+intentional stop timeout, **not unit success**. JSON reports cgroup_removed and
+staging_removed=true; code orders that observation before rm. This is an audit
+of recorded evidence and ordering, not a fresh independent cgroup observation.
+
+### Remaining security limits / independent-review inputs
+
+- Still **NOT QUALIFIED** as a hostile-input runner. Trusted reviewed inventory,
+  local operator, and no competing privileged unit/cgroup manipulation are assumed.
+- Assertions disappear under `python -O`; do not run optimized Python.
+- InvocationID is captured but not revalidated after stop; cgroup path reuse and
+  observation-to-deletion races are not solved. Recursive emptiness is a point-in-
+  time observation, not an atomic lifecycle barrier.
+- Journal is unit-scoped, not invocation-filtered; generic SIGKILL text is not a
+  cryptographic or structured binding to the reported descendant. Evidence4 does
+  have the matching PID, but the general harness does not enforce that binding.
+- Root staging/copy/seal remains a trusted-file workflow, not an adversarial
+  symlink/race-resistant build pipeline. Failures retain quarantine rather than
+  claiming cleanup; a saved quarantine record may be incomplete diagnostic data.
+- Offline doubles prove control flow, not kernel/systemd enforcement. No real
+  runner closure/lifecycle qualification, independent final review, integration,
+  hardware/router acceptance, or new privileged smoke is claimed. Old `/run`
+  quarantine was neither inspected nor modified by this offline work.

@@ -8,7 +8,7 @@ import unittest
 def main():
     root = Path(__file__).resolve().parent
     tracer = trace.Trace(count=True, trace=False)
-    suite = unittest.defaultTestLoader.discover(str(root), pattern='test_systemd_smoke.py')
+    suite = unittest.defaultTestLoader.discover(str(root), pattern='test_systemd_smoke*.py')
     result = tracer.runfunc(unittest.TextTestRunner(verbosity=2).run, suite)
     counts = tracer.results().counts
     report = {}

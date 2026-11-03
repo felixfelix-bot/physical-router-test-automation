@@ -67,6 +67,8 @@ def main():
     manifest = {r['target']: r['sha256'] for r in rows}
     manifest['/source/systemd_smoke_child.py'] = hashlib.sha256(child).hexdigest()
     (args.evidence / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+    # Persist quarantine before any privileged staging operation can fail.
+    (args.evidence / 'evidence.json').write_text(json.dumps(evidence, indent=2))
     with tempfile.TemporaryDirectory(prefix='prta-systemd-stage-', dir=os.environ['TMPDIR']) as stage:
         stage = Path(stage)
         for row in rows:
@@ -107,9 +109,12 @@ def main():
         props = dict(line.split('=', 1) for line in live.splitlines() if '=' in line)
         assert props['InvocationID'] and props['ActiveState'] == 'active'
         assert props['ControlGroup'] == '/system.slice/' + unit
-        cg = Path('/sys/fs/cgroup') / props['ControlGroup'].lstrip('/')
-        evidence['live_cgroup_events'] = (cg / 'cgroup.events').read_text()
-        evidence['live_recursive_procs'] = {str(p): p.read_text() for p in cg.rglob('cgroup.procs')}
+        candidate = Path('/sys/fs/cgroup') / props['ControlGroup'].lstrip('/')
+        evidence['live_cgroup_events'] = (candidate / 'cgroup.events').read_text()
+        evidence['live_recursive_procs'] = {str(p): p.read_text() for p in candidate.rglob('cgroup.procs')}
+        assert 'populated 1' in evidence['live_cgroup_events'].splitlines()
+        assert any(p.strip() for p in evidence['live_recursive_procs'].values())
+        cg = candidate
         deadline = time.monotonic() + 75
         result = ''
         evidence['live_samples'] = []
@@ -122,18 +127,22 @@ def main():
             time.sleep(0.2)
         evidence['result'] = result
     finally:
-        evidence['stop'] = run('sudo', '-n', '/usr/bin/systemctl', 'stop', unit, check=False)
-        evidence['journal'] = run('sudo', '-n', '/usr/bin/journalctl', '-u', unit, '--no-pager', '-o', 'short-precise')
-        if cg is not None and (not cg.exists() or ('populated 0' in (cg / 'cgroup.events').read_text() and all(not p.read_text().strip() for p in cg.rglob('cgroup.procs')))):
-            evidence['cleanup'] = 'cgroup_removed' if not cg.exists() else 'recursive_empty'
-            run('sudo', '-n', '/usr/bin/rm', '-rf', '--', str(root))
-            evidence['staging_removed'] = not root.exists()
-        run('sudo', '-n', '/usr/bin/systemctl', 'reset-failed', unit, check=False)
-        evidence['final_unit'] = run('/usr/bin/systemctl', 'show', unit, '-p', 'LoadState', check=False)
-        (args.evidence / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+        try:
+            evidence['stop'] = run('sudo', '-n', '/usr/bin/systemctl', 'stop', unit, check=False)
+            evidence['journal'] = run('sudo', '-n', '/usr/bin/journalctl', '-u', unit, '--no-pager', '-o', 'short-precise')
+            if cg is not None and (not cg.exists() or ('populated 0' in (cg / 'cgroup.events').read_text() and all(not p.read_text().strip() for p in cg.rglob('cgroup.procs')))):
+                evidence['cleanup'] = 'cgroup_removed' if not cg.exists() else 'recursive_empty'
+                run('sudo', '-n', '/usr/bin/rm', '-rf', '--', str(root))
+                evidence['staging_removed'] = not root.exists()
+            run('sudo', '-n', '/usr/bin/systemctl', 'reset-failed', unit, check=False)
+            evidence['final_unit'] = run('/usr/bin/systemctl', 'show', unit, '-p', 'LoadState', check=False)
+        finally:
+            (args.evidence / 'evidence.json').write_text(json.dumps(evidence, indent=2))
     print(json.dumps(evidence, indent=2))
     assert evidence['cleanup'] != 'QUARANTINE'
-    assert '"probe": "PASS"' in evidence['journal'] and 'ExecMainStatus=0' in evidence['result']
+    result_props = dict(line.split('=', 1) for line in evidence['result'].splitlines() if '=' in line)
+    assert result_props == {'Result': 'timeout', 'ExecMainCode': '1', 'ExecMainStatus': '0', 'ActiveState': 'failed', 'SubState': 'failed'}
+    assert '"probe": "PASS"' in evidence['journal']
     records = [json.loads(line[line.index('{'):]) for line in evidence['journal'].splitlines() if '{' in line and ('"descendant_pid"' in line or '"probe"' in line)]
     descendant = next(r for r in records if 'descendant_pid' in r)
     assert descendant['sid'] == descendant['descendant_pid']
