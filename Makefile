@@ -353,10 +353,16 @@ full-all: ## Run all test suites (lint + playwright + degraded + upstream)
 #  gets a second NIC, and the harness says so rather than reporting green.
 # ===========================================================================
 
-.PHONY: lab-up lab-smoke lab-verify lab-purchase lab-down lab-status
+.PHONY: lab-up lab-smoke lab-verify lab-purchase lab-down lab-status lab-fetch-apk lab-dns
 
 lab-up: ## Start the virtual TollGate lab (boot + install + verify) [qemu]
 	@bash scripts/lab/run-lab.sh up
+
+lab-fetch-apk: ## Fetch+verify a tollgate-wrt x86_64 apk into the lab dir [net]
+	@bash scripts/lab/fetch-apk.sh "$${LAB_DIR:-$$HOME/tollgate-virtual-lab}" "$${LAB_APK_TAG:-v0.6.0}"
+
+lab-dns: ## Start the lab resolver on the host bridge (required for apk add)
+	@bash scripts/lab/lab-dns.sh start "$${LAB_DIR:-$$HOME/tollgate-virtual-lab}"
 
 lab-smoke: ## Run the virtual-lab router smoke gate [pytest]
 	@bash scripts/lab/run-lab.sh smoke

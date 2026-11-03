@@ -1,0 +1,190 @@
+"""Offline tests for the two prerequisites a clean run needs before it can pass.
+
+Both were found by running `run-lab.sh up` from a fresh lab dir, and both fail
+in a way that reads like a product bug rather than a missing prerequisite:
+
+1. No apk in a fresh dir  -> "no artifact matching tollgate-wrt_*_x86_64.apk"
+2. No reachable resolver  -> `apk add` dies with the misleading
+                             "Failed to send request: Operation not permitted"
+
+These tests pin the mechanism of each fix so the rail cannot silently lose it.
+They need no QEMU, no KVM, no network.
+"""
+from __future__ import annotations
+
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LAB = REPO_ROOT / "scripts" / "lab"
+FETCH = LAB / "fetch-apk.sh"
+DNS = LAB / "lab-dns.sh"
+RUN_LAB = LAB / "run-lab.sh"
+VIRTUAL_LAB = REPO_ROOT / "scripts" / "virtual-lab.py"
+
+pytestmark = [pytest.mark.api, pytest.mark.virtual_lab]
+
+
+def _read(path: Path) -> str:
+    assert path.is_file(), f"missing required file: {path}"
+    return path.read_text()
+
+
+@pytest.mark.parametrize("script", [FETCH, DNS, RUN_LAB, LAB / "start-fake-mint.sh"])
+def test_scripts_are_valid_bash(script):
+    r = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert r.returncode == 0, f"bash -n failed for {script.name}:\n{r.stderr}"
+
+
+# ── 1. the apk fetch step closes the fresh-dir chicken-and-egg ───────────────
+
+def test_up_fetches_an_apk_before_installing():
+    """`up` must fetch when artifacts/ is empty, or a clean dir dead-ends."""
+    body = _read(RUN_LAB)
+    assert "fetch-apk.sh" in body, "up does not call the apk fetch step"
+    fetch_at = body.index('"$REPO_ROOT/scripts/lab/fetch-apk.sh"')
+    # Match the INVOCATION, not the mention in the comment above it.
+    install_at = body.index('install-tollgate --host localhost')
+    assert fetch_at < install_at, "the apk must be fetched BEFORE install-tollgate runs"
+    # Idempotence lives in fetch-apk.sh (it exits early when an apk is staged),
+    # so `up` can always call it without re-downloading.
+    assert "already staged" in _read(FETCH), (
+        "fetch-apk.sh must be idempotent so repeated `up` runs do not re-download"
+    )
+
+
+def test_fetch_apk_verifies_the_checksum_before_staging():
+    """Installing bytes that differ from the published SHA256SUMS makes every
+    later 'it works' claim unfounded."""
+    body = _read(FETCH)
+    assert "SHA256SUMS" in body
+    assert "sha256sum" in body
+    assert re.search(r'\[ "\$expected" = "\$actual" \]', body), (
+        "fetch-apk.sh must compare expected vs actual digest and refuse on mismatch"
+    )
+    assert re.search(r"refusing to install unverified bytes", body), (
+        "a release without SHA256SUMS must be refused, not trusted"
+    )
+
+
+def test_fetch_apk_matches_arch_not_a_fixed_suffix():
+    """Published asset names changed shape between releases
+    (…_alpha4_pre21_x86_64.apk vs …_x86_64-x86-64.apk); matching a fixed suffix
+    broke the fetch."""
+    body = _read(FETCH)
+    assert "x86_64" in body
+    assert re.search(r"tollgate-wrt_\[\^\"\]\*x86_64", body), (
+        "fetch-apk.sh should match the arch token anywhere in the name"
+    )
+
+
+# ── 2. the resolver prerequisite ────────────────────────────────────────────
+
+def test_provisioner_points_guest_dns_at_the_lab_forwarder():
+    """The provisioned LAN DNS must be the host bridge, not 8.8.8.8.
+
+    Measured: 8.8.8.8 is unreachable from the guest on this host, so dnsmasq
+    has no upstream and apk dies with 'Operation not permitted'. A regression
+    here is silent — the lab boots, verify passes, and only `apk add` fails.
+    """
+    body = _read(VIRTUAL_LAB)
+    assert "uci set network.lan.dns='__HOST_BRIDGE_IP__'" in body, (
+        "provisioning must set LAN DNS to the lab forwarder on the host bridge"
+    )
+    assert "uci set network.lan.dns='8.8.8.8'" not in body, (
+        "the unreachable public resolver must not come back"
+    )
+
+
+def test_up_starts_the_resolver_before_installing():
+    """The resolver must be up before `apk add` runs, and AFTER start-poc
+    creates the bridge it binds to (measured: starting it first failed with
+    'bridge tg-poc-br is absent')."""
+    body = _read(RUN_LAB)
+    boot_at = body.index('start-poc --host localhost')
+    dns_at = body.index('"$REPO_ROOT/scripts/lab/lab-dns.sh" start')
+    install_at = body.index('install-tollgate --host localhost')
+    assert boot_at < dns_at, (
+        "the resolver binds to the lab bridge, which start-poc creates — "
+        "it cannot start before the VM"
+    )
+    assert dns_at < install_at, (
+        "the resolver must be up before install-tollgate, or the guest's "
+        "first apk call has no DNS"
+    )
+
+
+def test_lab_dns_adopts_an_orphan_listener():
+    """A hand-run dnsmasq can hold :53 with its pidfile deleted. Binding then
+    fails with a bare 'Address already in use' and the lab cannot start."""
+    body = _read(DNS)
+    assert "listener_pid" in body, "lab-dns.sh must locate the socket owner"
+    assert "adopted existing forwarder" in body, (
+        "lab-dns.sh must adopt a healthy orphan instead of failing to bind"
+    )
+
+
+def test_lab_dns_status_works_unprivileged():
+    """dnsmasq binds :53 as root, so `kill -0` from the session that started it
+    returns EPERM; treating that as 'dead' reported a live forwarder as down."""
+    body = _read(DNS)
+    assert re.search(r"sudo -n kill -0", body), (
+        "liveness must fall back to a privileged kill -0 (EPERM != dead)"
+    )
+
+
+# ── 3. the mint must be running and the module repointed BEFORE verify ──────
+
+def test_up_starts_mint_and_repoints_module_before_verify():
+    """A freshly installed module advertises production mints (or none), which
+    is DEGRADED mode: no price_per_step tags, and verify refuses it. Doing this
+    after verify makes a clean run fail at the last gate for the wrong reason."""
+    body = _read(RUN_LAB)
+    verify_at = body.index("verify-lab")
+    assert body.index("start-fake-mint.sh") < verify_at, (
+        "the mint must be started before verify"
+    )
+    assert body.index("configure-fake-mint.py") < verify_at, (
+        "the module must be repointed at the lab mint before verify"
+    )
+
+
+def test_configure_fake_mint_clears_seeded_wallet_state():
+    """The install seeds wallet.db with production keysets. On a host without
+    reachable internet the startup refresh never completes, so the module
+    wedges in 'starting' and :2121 answers 503 forever."""
+    body = _read(LAB / "configure-fake-mint.py")
+    assert "wallet-quarantine" in body, (
+        "configure-fake-mint.py must quarantine the seeded wallet.db"
+    )
+    assert "wallet.db" in body and "ecash" in body, (
+        "both wallet.db and the ecash/ dir must be quarantined"
+    )
+    assert "starting" in body, "the reason (permanent 503 'starting') must be documented"
+
+
+def test_start_fake_mint_keeps_state_inside_the_lab_dir():
+    """This host's /tmp is tmpfs: a mint db there is RAM pressure and is lost."""
+    body = _read(LAB / "start-fake-mint.sh")
+    assert "/tmp/cdk-mintd-local" not in body, (
+        "the mint work dir must not live in /tmp"
+    )
+    assert "CDK_MINTD_WORK:-$LAB/mint" in body, (
+        "the mint work dir must default inside the lab dir"
+    )
+
+
+def test_start_fake_mint_checks_the_advertised_url():
+    """A mint bound only to loopback passes an in-host probe and is unreachable
+    from the guest, so every quote fails. The check must target the lab address
+    the router is told to use, not 127.0.0.1."""
+    body = _read(LAB / "start-fake-mint.sh")
+    assert "reachable on loopback but not at" in body, (
+        "the mint must be probed at the address the router will use"
+    )
+    assert 'http://${HOST_ADDR}:${PORT}/v1/keys' in body, (
+        "the guest-facing probe must hit the lab address"
+    )

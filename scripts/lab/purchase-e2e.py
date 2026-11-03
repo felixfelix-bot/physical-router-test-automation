@@ -83,15 +83,30 @@ def main() -> int:
         return 10
 
     # --- mint a token ------------------------------------------------------
+    # lib.cashu.HttpMinter was deliberately removed (#268): it drifted from the
+    # spec (v1-truncated keyset ids) and masked a real portal defect. The
+    # supported entry point is create_minter(), which selects the CDK reference
+    # wallet (cdk-cli) and falls back to the nutshell cashu CLI.
+    #
+    # LAB_CDK_CLI exists because neither CLI is installed by this harness: the
+    # virtual-lab host has cdk-mintd but not cdk-cli, and `pip install cashu`
+    # does not resolve (its breez-sdk-spark pin is gone). Point this at a
+    # checksum-verified cdk-cli binary and the purchase proceeds; leave it unset
+    # and create_minter falls back as before.
     try:
-        from lib.cashu import HttpMinter
+        from lib.cashu import CdkCliWallet, create_minter
     except Exception as e:
-        print(f"FAIL: cannot import lib.cashu.HttpMinter: {e}", file=sys.stderr)
+        print(f"FAIL: cannot import lib.cashu minter: {e}", file=sys.stderr)
         return 11
     try:
-        minter = HttpMinter(MINT)
+        cdk_cli = os.environ.get("LAB_CDK_CLI")
+        if cdk_cli:
+            minter = CdkCliWallet(MINT, cdk_cli_path=cdk_cli)
+        else:
+            minter = create_minter(mint_url=MINT)
         minter.ensure_mint_available()
         token = minter.mint(amount=AMOUNT)
+        print(f"minter: {type(minter).__name__}")
         print(f"minted token: {token[:32]}... ({len(token)} chars)")
     except Exception as e:
         print(f"FAIL: minting failed: {type(e).__name__}: {e}", file=sys.stderr)

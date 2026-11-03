@@ -87,6 +87,42 @@ if MINT_URL not in (out or ""):
 
 print(f"[mint] accepted_mints: {old_count} -> 1 ({MINT_URL})")
 
+# Clear the wallet state SEEDED AT INSTALL. Measured: /etc/tollgate/wallet.db
+# ships with three production mint keysets from https://mint.coinos.io/. On a
+# host without reachable internet the startup refresh of those keysets never
+# completes, so the module wedges in "starting" FOREVER and :2121 answers
+# HTTP 503 {"code":"starting"} no matter how many times it is restarted.
+#
+# logread's decisive line:
+#   Warning: network connection issue during loading keyset 004f7adf... from
+#   https://mint.coinos.io/: ... dial tcp: lookup mint.coinos.io: i/o timeout
+#   - Internet connection is down
+#   Skipping keyset 004f7adf... until connection is restored.
+#
+# Quarantining wallet.db + ecash/ (not deleting: the bytes are evidence) yields
+# "Wallet Balance: 0" on restart and :2121 -> HTTP 200 kind:10021.
+# Without this step the lab looks broken on any offline host.
+quarantine_cmd = (
+    "set -e; "
+    "mkdir -p /etc/tollgate/wallet-quarantine; "
+    "stamp=$(date +%s); "
+    "/etc/init.d/tollgate-wrt stop >/dev/null 2>&1 || true; "
+    "if [ -f /etc/tollgate/wallet.db ]; then "
+    "  mv /etc/tollgate/wallet.db /etc/tollgate/wallet-quarantine/wallet.db.$stamp; "
+    "  echo QUARANTINED_DB; "
+    "fi; "
+    "if [ -d /etc/tollgate/ecash ]; then "
+    "  mv /etc/tollgate/ecash /etc/tollgate/wallet-quarantine/ecash.$stamp; "
+    "  echo QUARANTINED_ECASH; "
+    "fi; "
+    "/etc/init.d/tollgate-wrt start >/dev/null 2>&1 || true; "
+    "echo OK"
+)
+r = subprocess.run(SSH + [quarantine_cmd], input="", capture_output=True,
+                   text=True, timeout=180)
+print(f"[mint] wallet state: {r.stdout.strip() or r.stderr.strip()}")
+
+# Restart once more so the module comes up with a clean wallet AND the new config.
 rc, out, err = run("/etc/init.d/tollgate-wrt restart 2>&1; sleep 3; echo RESTARTED")
 print(f"[mint] restart: {out or err}")
 

@@ -82,14 +82,18 @@ cmd_up() {
   # lack the exec bit in a fresh checkout.
   [ -f "$VL" ] || die "missing $VL"
 
-  log "1/5 host readiness"
+  log "1/7 host readiness"
   "$PY" "$VL" doctor --host localhost || log "doctor reported issues (continuing)"
 
-  log "2/5 base image + overlay"
+  log "2/7 base image + overlay"
   "$PY" "$VL" prepare-image --host localhost --openwrt-version "${LAB_OPENWRT_VERSION:-25.12.5}" \
     --workdir "$LAB_DIR"
 
-  log "3/5 boot router VM + provision addressing plan"
+  # 3: the resolver needs the lab bridge to bind to, and the bridge is created by
+  # start-poc. It must still exist BEFORE install-tollgate, because `apk add`
+  # resolves the package feed by name and dies with "Operation not permitted"
+  # when the guest has no upstream (measured; see README prerequisites).
+  log "3/7 boot router VM + provision addressing plan"
   # The router VM is the component under test. start-poc also tries to boot a
   # Debian client VM, but that needs a separately-prepared image and is not
   # required to prove the router: the smoke gate drives :2121 from the host.
@@ -104,11 +108,41 @@ cmd_up() {
     fi
   fi
 
-  log "4/5 install tollgate-wrt"
+  log "4/7 lab resolver on the host bridge"
+  "$REPO_ROOT/scripts/lab/lab-dns.sh" start "$LAB_DIR" \
+    || log "WARNING: no lab resolver; apk add cannot resolve the package feed"
+
+  log "5/7 install tollgate-wrt"
+  # Chicken-and-egg in a fresh lab dir: install-tollgate auto-selects from
+  # <workdir>/artifacts but only STAGES into it once handed an artifact. Fetch
+  # (and checksum-verify) one if the dir has none, so `up` works from scratch.
+  if [ -z "${LAB_ARTIFACT:-}" ]; then
+    "$REPO_ROOT/scripts/lab/fetch-apk.sh" "$LAB_DIR" "${LAB_APK_TAG:-v0.6.0}" \
+      || die "no tollgate-wrt apk available; pass LAB_ARTIFACT=<path> or set LAB_APK_TAG"
+  fi
   "$PY" "$VL" install-tollgate --host localhost --workdir "$LAB_DIR" \
     ${LAB_ARTIFACT:+--artifact "$LAB_ARTIFACT"}
 
-  log "5/5 verify the lab is a TollGate lab"
+  # 6: the mint must exist BEFORE verify, and the module must be repointed at it
+  # BEFORE verify: a freshly installed module advertises production mints (or
+  # none at all) and DEGRADED mode has no price_per_step tags, which verify
+  # correctly refuses. Skipping these two steps is why a clean run used to fail
+  # at the last gate with an error that looked like a module defect.
+  log "6/7 free fakewallet mint + repoint the module at it"
+  if [ -x /opt/cdk-mintd/cdk-mintd ] || [ -n "${CDK_MINTD_BIN:-}" ]; then
+    "$REPO_ROOT/scripts/lab/start-fake-mint.sh" "$LAB_DIR" \
+      || log "WARNING: mint did not start; the lab will be DEGRADED (no purchase rail)"
+    if [ -f "$LAB_DIR/run/cdk-mintd.pid" ]; then
+      "$PY" "$REPO_ROOT/scripts/lab/configure-fake-mint.py" \
+        "${LAB_ROUTER:-10.99.99.1}" "${LAB_ROOT_PASSWORD:-tollgate}" \
+        "${LAB_MINT:-http://10.99.99.2:8383}" \
+        || log "WARNING: could not repoint the module at the lab mint"
+    fi
+  else
+    log "no cdk-mintd on this host — skipping the mint (lab will be DEGRADED)"
+  fi
+
+  log "7/7 verify the lab is a TollGate lab"
   "$PY" "$VL" verify-lab --host localhost --timeout "${LAB_VERIFY_TIMEOUT:-180}"
   log "lab is UP. Try: $0 smoke"
 }
@@ -139,6 +173,7 @@ cmd_purchase() {
 cmd_down() {
   log "stopping VMs and lab network"
   "$PY" "$VL" stop-poc --host localhost --workdir "$LAB_DIR" || true
+  "$REPO_ROOT/scripts/lab/lab-dns.sh" stop "$LAB_DIR" || true
   # stop-poc removes the tap/bridge but not a macvlan client we may have added.
   sudo ip link del lab-client 2>/dev/null || true
   if [ -f "$LAB_DIR/run/cdk-mintd.pid" ]; then

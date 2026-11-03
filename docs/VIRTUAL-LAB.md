@@ -63,29 +63,73 @@ Give the router VM a **second NIC + second bridge**: WAN on `tap2`/`br-wan`, LAN
 staying on `br-lan`. Then `oifname != "br-lan"` becomes meaningful, the gate
 enforces, nodogsplash registers the client, and the purchase path becomes
 exercisable. This is the same prerequisite the physical-router playbook lists for
-any interface-keyed rule.
+any interface-keyed rule. Tracked as `t_94013caf`.
+
+### What the harness now does about it
+
+`scripts/lab/purchase-e2e.py` is a **real** end-to-end driver, not a stub: it
+mints an actual Cashu token from the lab fakewallet mint and POSTs it to `:2121`.
+On the current single-NIC topology it exits **12** (a `kind:21023` error event,
+not a session event) — because the module correctly refuses an unregistered
+client. The exit code is the honest signal: **0 only when the session flipped**.
+Once `t_94013caf` lands the second NIC, the same command must go green with no
+change to the script. If it still does not, the topology fix or the module is
+wrong — not the test.
+
+Token minting needs a Cashu client, and **neither one is installed by default**
+(this was a measured dead end: `pip install cashu` does not resolve because its
+`breez-sdk-spark` pin is gone). Use the CDK reference wallet, which is what the
+mint itself is built from:
+
+```bash
+# one-time, checksum-verified against cdk's published SHA256SUMS
+curl -fsSL -o /usr/local/bin/cdk-cli \
+  https://github.com/cashubtc/cdk/releases/download/v0.18.3/cdk-cli-0.18.3-x86_64
+chmod +x /usr/local/bin/cdk-cli
+
+LAB_CDK_CLI=/usr/local/bin/cdk-cli scripts/lab/run-lab.sh purchase
+```
+
+Without `LAB_CDK_CLI`, `purchase-e2e.py` falls back to `create_minter()`
+(`cdk-cli` on PATH, else the nutshell `cashu` CLI) and exits **11** with an
+explicit "no minter" message rather than pretending.
 
 ---
 
 ## Quick start
 
 ```bash
-# from the repo root
-scripts/lab/run-lab.sh up        # doctor -> image -> boot -> install -> verify
+# from the repo root — one command, clean dir to verified lab
+scripts/lab/run-lab.sh up        # image -> boot -> dns -> apk -> mint -> verify
 scripts/lab/run-lab.sh smoke     # pytest smoke proof
 scripts/lab/run-lab.sh status    # what's running + :2121 code
-scripts/lab/run-lab.sh down      # tear down VMs, bridge, mint
+scripts/lab/run-lab.sh down      # tear down VMs, bridge, mint, resolver
 ```
+
+`up` is **self-sufficient from an empty directory**. Each step is either done
+for you or refused loudly — never silently skipped:
+
+| Step | What it does | If it cannot |
+|---|---|---|
+| 1 | `doctor` host readiness | continues with a warning |
+| 2 | fetch + convert the OpenWrt base image | fails |
+| 3 | boot the router VM, provision `10.99.99.1` | fails if the router never answers on :22 |
+| 4 | start the lab resolver on the bridge | warns (then `apk add` will fail — see prerequisites) |
+| 5 | fetch+verify the apk, install `tollgate-wrt` | fails |
+| 6 | start the fakewallet mint, repoint the module at it | warns (lab is DEGRADED) |
+| 7 | `verify-lab`: `:2121` → `kind:10021` in FULL mode, idle | fails |
 
 Or through the Makefile (same thing, repo convention):
 
 ```bash
-make lab-up        # boot + install + verify
-make lab-smoke     # the smoke gate
-make lab-verify    # re-assert :2121 answers kind:10021
-make lab-purchase  # one purchase (read the rail status first!)
-make lab-status    # what's running
-make lab-down      # tear down
+make lab-up         # boot + install + mint + verify
+make lab-smoke      # the smoke gate
+make lab-verify     # re-assert :2121 answers kind:10021
+make lab-purchase   # one purchase (read the rail status first!)
+make lab-fetch-apk  # just fetch+verify the apk into $LAB_DIR/artifacts
+make lab-dns        # just start the resolver on the lab bridge
+make lab-status     # what's running
+make lab-down       # tear down
 ```
 
 These targets deliberately do **not** take the physical hardware lock, unlike the

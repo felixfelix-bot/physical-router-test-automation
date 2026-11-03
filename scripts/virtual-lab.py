@@ -303,7 +303,12 @@ print('Configuring LAN IP and internet access via host bridge...')
 send_and_wait(s, "uci set network.lan.ipaddr='__GATEWAY__'", wait=2)
 send_and_wait(s, "uci set network.lan.netmask='255.255.255.0'", wait=2)
 send_and_wait(s, "uci set network.lan.gateway='__HOST_BRIDGE_IP__'", wait=2)
-send_and_wait(s, "uci set network.lan.dns='8.8.8.8'", wait=2)
+# DNS: point at the lab's own forwarder on the host bridge, NOT 8.8.8.8.
+# Measured failure: 8.8.8.8 is unreachable from the guest on this host, so
+# dnsmasq has no upstream and `apk add` fails with the misleading
+# "Failed to send request: Operation not permitted". guest->internet by IP works,
+# only name resolution dies. scripts/lab/lab-dns.sh serves the forwarder there.
+send_and_wait(s, "uci set network.lan.dns='__HOST_BRIDGE_IP__'", wait=2)
 send_and_wait(s, 'uci commit network', wait=2)
 send_and_wait(s, '/etc/init.d/network restart', wait=5)
 
@@ -1115,6 +1120,12 @@ def start_poc(args: argparse.Namespace) -> int:
     workdir = cast(str, args.workdir)
     pidfile, _serial_sock, disk = _poc_paths(workdir)
     min_mem_mb = int(os.environ.get("TOLLGATE_VLAB_MIN_MEM_MB", "2048"))
+    # Docs (docs/VIRTUAL-LAB.md trap 7) and the code drifted apart: the README
+    # says the router runs -smp 2 -m 768 after -smp 1 / 512MB wedged the
+    # virtio-net TX queue under `apk add`, while the QEMU argv still booted
+    # -smp 1 -m 512. Use the documented values, overridable for a constrained host.
+    poc_ram = os.environ.get("TOLLGATE_VLAB_RAM_MB", "768")
+    poc_smp = os.environ.get("TOLLGATE_VLAB_SMP", "2")
 
     # --fresh cannot be honored on a live VM (qemu owns the overlay file);
     # the guard below reports that instead of silently skipping the purge.
@@ -1195,8 +1206,8 @@ sudo iptables -t nat -C POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUER
 mkdir -p "$workdir/logs"
 nohup qemu-system-x86_64 \
   -enable-kvm \
-  -m 512 \
-  -smp 1 \
+  -m {poc_ram} \
+  -smp {poc_smp} \
   -nographic \
   -serial unix:"$workdir/run/serial.sock",server,nowait,logfile="$workdir/logs/serial.log",logappend=on \
   -monitor unix:"$workdir/run/monitor.sock",server,nowait \
@@ -1645,7 +1656,7 @@ exit 1
 #
 # Both are idempotent and safe to re-run.
 
-DEFAULT_ARTIFACT_GLOB = "tollgate-wrt_*_x86_64.apk"
+DEFAULT_ARTIFACT_GLOB = "tollgate-wrt_*x86_64*.apk"
 # The module's own deps that the base image does not ship. Kept explicit so an
 # offline install never silently depends on a feed being reachable.
 TOLLGATE_DEP_PACKAGES = ["jq", "nodogsplash"]

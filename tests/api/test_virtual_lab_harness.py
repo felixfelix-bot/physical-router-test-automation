@@ -109,11 +109,21 @@ def test_artifact_glob_matches_real_release_name():
     glob_pat = re.search(r'DEFAULT_ARTIFACT_GLOB\s*=\s*"([^"]+)"', _read(VIRTUAL_LAB))
     assert glob_pat, "DEFAULT_ARTIFACT_GLOB is not defined in virtual-lab.py"
 
+    # Published names have changed shape between releases:
+    #   tollgate-wrt_0.6.0_alpha4_pre21_x86_64.apk        (arch last)
+    #   tollgate-wrt_0.6.0_x86_64-x86-64.apk              (target suffix after arch)
+    # A glob ending in `_x86_64.apk` silently matched only the first form, so a
+    # clean run of a v0.6.0 lab died with "no artifact matching" while the freshly
+    # fetched apk sat in artifacts/. Match the arch token anywhere instead.
     import fnmatch
-    real = "tollgate-wrt_0.6.0_alpha4_pre21_x86_64.apk"
-    assert fnmatch.fnmatch(real, glob_pat.group(1)), (
-        f"glob {glob_pat.group(1)!r} no longer matches the real artifact {real!r}"
-    )
+    real = [
+        "tollgate-wrt_0.6.0_alpha4_pre21_x86_64.apk",
+        "tollgate-wrt_0.6.0_x86_64-x86-64.apk",
+    ]
+    for name in real:
+        assert fnmatch.fnmatch(name, glob_pat.group(1)), (
+            f"glob {glob_pat.group(1)!r} no longer matches the real artifact {name!r}"
+        )
     # And it must NOT match a different arch — installing aarch64 into an x86 VM
     # fails at exec time and reads as a product bug.
     assert not fnmatch.fnmatch(
