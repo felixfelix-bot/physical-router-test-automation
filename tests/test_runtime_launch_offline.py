@@ -39,10 +39,11 @@ class LauncherTests(unittest.TestCase):
                 child.communicate.return_value = outcome[:2] if isinstance(outcome, tuple) else ('', '')
                 events = []
                 with patch.object(m.subprocess, 'Popen', return_value=child) as spawn, patch.object(m, 'quiesce', side_effect=lambda p: events.append('quiescent')), patch.object(m.shutil, 'rmtree', side_effect=lambda p: events.append('remove')):
-                    if isinstance(outcome, BaseException):
-                        with self.assertRaises(type(outcome)): m.execute(root, pathlib.Path(d))
-                    else: self.assertEqual(m.execute(root, pathlib.Path(d)), outcome[2])
-                self.assertEqual(events, ['quiescent', 'remove'])
+                    # Even a finished outer process supplies no namespace proof.
+                    with self.assertRaisesRegex(RuntimeError, 'QUARANTINED'):
+                        m.execute(root, pathlib.Path(d))
+                self.assertEqual(events, ['quiescent'])
+                self.assertTrue((pathlib.Path(d)/'QUARANTINED').exists())
                 self.assertTrue(spawn.call_args.kwargs['start_new_session'])
                 self.assertTrue(spawn.call_args.kwargs['close_fds'])
                 self.assertIn('--kill-child', spawn.call_args.args[0])
@@ -64,10 +65,32 @@ class LauncherTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'QUARANTINED'): m.execute(pathlib.Path(d)/'root', pathlib.Path(d))
                 remove.assert_not_called()
 
+    def test_sigterm_during_spawn_quarantines(self):
+        m = self.module()
+        with tempfile.TemporaryDirectory() as d:
+            staging = pathlib.Path(d); root = staging/'root'; root.mkdir()
+            with patch.object(m.subprocess, 'Popen', side_effect=lambda *a, **k: m.interrupted(signal.SIGTERM, None)):
+                with self.assertRaisesRegex(RuntimeError, 'QUARANTINED'):
+                    m.execute(root, staging)
+            self.assertTrue(root.exists())
+            self.assertTrue((staging/'QUARANTINED').exists())
+
+    def test_absent_outer_group_is_not_namespace_proof(self):
+        m = self.module()
+        with tempfile.TemporaryDirectory() as d:
+            staging = pathlib.Path(d); root = staging/'root'; root.mkdir()
+            child = Mock(pid=123, returncode=0)
+            child.communicate.return_value = ('finished', '')
+            with patch.object(m.subprocess, 'Popen', return_value=child), patch.object(m.os, 'killpg', side_effect=ProcessLookupError()):
+                with self.assertRaisesRegex(RuntimeError, 'QUARANTINED'):
+                    m.execute(root, staging)
+            self.assertTrue(root.exists())
+            self.assertTrue((staging/'QUARANTINED').exists())
+
     def test_spawn_failure_removes_unstarted_root(self):
         m = self.module()
         with tempfile.TemporaryDirectory() as d:
-            with patch.object(m.subprocess, 'Popen', side_effect=OSError('spawn')), patch.object(m.shutil, 'rmtree') as remove:
+            with patch.object(m.subprocess, 'Popen', side_effect=FileNotFoundError('command not found')), patch.object(m.shutil, 'rmtree') as remove:
                 with self.assertRaises(OSError): m.execute(pathlib.Path(d)/'root', pathlib.Path(d))
                 remove.assert_called_once_with(pathlib.Path(d))
 

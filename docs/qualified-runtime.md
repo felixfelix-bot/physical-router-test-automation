@@ -2,20 +2,24 @@
 
 ## REPORT / PROGRESS — offline security remediation (2026-11-04)
 
-R1: launcher now owns a dedicated process group, handles timeout, nonzero setup
-exit and interruption, and runs TERM/KILL, leader reap and group-absence checks
-BEFORE removing staging. Permission errors, surviving groups and interrupted
-spawn with unknown child identity retain staging and raise an explicit
-QUARANTINED failure. Repeated INT/TERM is masked during cleanup. There is no
+R1: launcher attempts TERM/KILL, leader reap and outer group-absence checks,
+but NONE of these establishes complete namespace descendant termination.
+Every returned Popen child now retains staging and raises explicit QUARANTINED,
+including exit zero and an absent outer PGID. There is no independent namespace
+termination proof channel, so no launched runtime can report clean completion.
+SIGTERM/InterruptedError during Popen quarantines unknown spawn; only synchronous
+FileNotFoundError (command not found, no returned child) permits spawn-failure
+cleanup. Other spawn errors conservatively quarantine. Repeated INT/TERM is masked during cleanup. There is no
 TemporaryDirectory finalizer that can blindly delete an active runtime root.
 A pre-spawn preparation failure can remove staging because no process exists.
 
 This is **not proof of privileged descendant containment**: an unprivileged
 launcher may not signal root descendants; it then retains the root. Group
-absence only establishes death of members of that group. The trusted command
-chain must not create surviving children in other sessions/groups (sudo policy
-may affect session topology); unshare's kill-child remains an additional
-control, not an offline proof. SIGKILL/power loss cannot run Python cleanup and
+absence only establishes death of members of that group. sudo/timeout may
+create other sessions/groups; unshare's kill-child is not an independent proof.
+Retained staging must not be reused or manually deleted until an operator has
+independently established complete descendant termination. No automatic release
+or invented acknowledgment was added. SIGKILL/power loss cannot run Python cleanup and
 leave staging behind. No privileged execution is authorized by these tests.
 
 R2: setup/probe/inventory are import-safe. OS, subprocess, import and socket
@@ -32,10 +36,15 @@ TMPDIR="$HOME/.hermes/profiles/manager/cache/scratch" \
   "$HOME/.hermes/hermes-agent/venv/bin/python3" -I -B tests/runtime_offline_coverage.py
 ```
 
-Result: **20 unittest tests + 10 manifest pytest cases pass**. Stdlib trace
+Result: **22 unittest tests + 10 manifest pytest cases pass**. Stdlib trace
 executable lines, excluding synthetic line zero, across ALL five production
-scripts: helper **30/30**, inventory **31/32**, launcher **91/92**, probe
-**29/30**, setup **17/18**; **198/202 = 98.02% aggregate**. Uncovered lines are
+scripts: helper **30/30**, inventory **31/32**, launcher **93/94**, probe
+**29/30**, setup **17/18**; **200/204 = 98.04% aggregate**.
+Both new regressions were observed RED before repair: SIGTERM during Popen
+propagated InterruptedError and deleted staging; absent outer PGID with a
+finished leader deleted staging without raising QUARANTINED. Both are now GREEN.
+Existing outcome tests now require quarantine rather than treating mocked outer
+group quiescence as namespace proof; command-not-found cleanup remains covered. Uncovered lines are
 CLI main invocations. This is not branch coverage or actual namespace evidence.
 The runner loads only named tests and disables pytest plugins/conftest discovery.
 RED observed before refactoring: top-level launcher import failed (argv access),

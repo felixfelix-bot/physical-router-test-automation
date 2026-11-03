@@ -1,4 +1,4 @@
-"""Trusted import launcher; retain staging whenever group death is unconfirmed."""
+"""Trusted import launcher; quarantine all launches without namespace death proof."""
 import hashlib
 import importlib.util
 import json
@@ -21,8 +21,8 @@ def quiesce(child):
 
     A caller unable to signal a privileged descendant fails closed. This is
     deliberately not a claim to contain children that escape the process group.
-    Reviewed setup never starts another session; unshare also kills PID 1 on
-    supervisor death. No cleanup is authorized merely by the leader exiting.
+    sudo/timeout may create other groups. Even successful return here does not
+    authorize cleanup: execute has no independent namespace termination proof.
     """
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
@@ -54,9 +54,11 @@ def execute(root, staging):
         out, err = child.communicate(timeout=30)
         print(out); print(err); print('EXIT', child.returncode)
         return child.returncode
-    except OSError:
-        # Popen reports synchronous exec failure after reaping its child.
-        spawn_uncertain = False
+    except FileNotFoundError:
+        # Only a synchronous command-not-found Popen failure proves no child.
+        # InterruptedError (including our SIGTERM handler) is NOT such proof.
+        if child is None:
+            spawn_uncertain = False
         raise
     finally:
         # Mask repeated terminal signals throughout confirmation/removal. No
@@ -69,6 +71,9 @@ def execute(root, staging):
             if child is not None:
                 try:
                     quiesce(child)
+                    # Outer PGID absence cannot prove namespace descendants died.
+                    # This experimental launcher has no independent proof channel.
+                    raise RuntimeError('namespace termination unproven')
                 except BaseException as exc:
                     (staging/'QUARANTINED').write_text('Quiescence NOT established: %r\n' % exc)
                     raise RuntimeError('QUARANTINED: root retained at %s; quiescence unconfirmed' % root) from exc
