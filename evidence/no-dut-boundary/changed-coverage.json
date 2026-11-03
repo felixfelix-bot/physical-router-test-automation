@@ -1,7 +1,18 @@
 {
   "tests_exit": 0,
-  "changed_statements": 27,
-  "covered_changed_statements": 27,
-  "missing": [],
-  "percent": 100.0
+  "changed_statements": 64,
+  "covered_changed_statements": 54,
+  "missing": [
+    530,
+    543,
+    546,
+    547,
+    548,
+    549,
+    550,
+    551,
+    557,
+    559
+  ],
+  "percent": 84.375
 }

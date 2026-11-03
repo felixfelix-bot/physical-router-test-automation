@@ -1,3 +1,25 @@
+# No-DUT review remediation — supersedes the None-sentinel report below
+
+- Required/router early-return reproduced RED with actual pytest: child `1 passed`,
+  exit 0 where refusal 4 was expected, zero transport calls. Initial probe binding
+  error corrected before recording this behavioral RED.
+- Explicit `venue_only` admission now refuses non-opted-in items and forbidden
+  static device fixture closures at collection, before setup. Separate
+  `venue_ownership` retains shared real claim/acquire/env/finalizer code;
+  absent acquisition fails rather than returning a misleading None.
+- Real subprocess tests cover admitted venue success/failure, unmarked required
+  early return, marked router, autouse/dependent devices, repeated dynamic requests,
+  and zero transport calls. Repeated failed requests no longer trip pytest's
+  internal fixture assertion. Required-skip gate and normal-mode controls retained.
+- Focused suite: **117 passed in 4.68s**. Changed statement coverage against
+  `8d52f45`: **54/64 = 84.375%** via existing stdlib trace script (41 tests).
+  This includes moved code; not branch/whole-file coverage or live qualification.
+- Offline doubles only; no hardware, SSH, coordinator, VM or unsafe draft replay.
+  Marker admission is not a sandbox: only a separately reviewed child is supported.
+  No merge, integration or PR opened. Feature branch only.
+
+---
+
 # No-DUT boundary prerequisite — not fleet qualification
 
 Base `8d52f451bc08e86bfc54a34ad04969539eda3c9f`; isolated branch

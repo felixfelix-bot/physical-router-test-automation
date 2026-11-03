@@ -351,6 +351,7 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    config.addinivalue_line("markers", "venue_only: reviewed venue-only child (not a sandbox)")
     if config.getoption("--no-dut", default=False):
         if IS_MOCK_MODE or os.environ.get("TOLLGATE_USE_HARDWARE_LOCK", "").lower() in ("1", "true", "yes"):
             raise pytest.UsageError("--no-dut forbids mock-server and hardware-lock modes")
@@ -377,17 +378,21 @@ def pytest_configure(config):
         os.environ["TOLLGATE_BACKEND_URL"] = _srv.url
 
 
+DEVICE_FIXTURES = frozenset({
+    "router", "adb", "secondary_router", "chain_routers", "all_routers",
+    "serial_console", "cashu", "m5_mint", "wifi", "connected_wifi",
+    "test_pricing", "minted_token",
+})
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_fixture_setup(fixturedef, request):
-    # Reject rather than skip: asking for DUT work must not look qualified.
-    # router itself remains available to own the actual venue lifecycle.
-    device_fixtures = {
-        "adb", "secondary_router", "chain_routers", "all_routers",
-        "serial_console", "cashu", "m5_mint", "wifi", "connected_wifi",
-        "test_pricing", "minted_token",
-    }
-    if request.config.getoption("--no-dut", default=False) and fixturedef.argname in device_fixtures:
-        raise pytest.UsageError(f"--no-dut forbids device fixture {fixturedef.argname}")
+    # Backstop for dynamic getfixturevalue; static closures are refused at collection.
+    if request.config.getoption("--no-dut", default=False) and fixturedef.argname in DEVICE_FIXTURES:
+        error = pytest.UsageError(f"--no-dut forbids device fixture {fixturedef.argname}")
+        # Match pytest's failed-fixture cache contract for repeated session requests.
+        fixturedef.cached_result = (None, fixturedef.cache_key(request), error)
+        raise error
 
 
 @pytest.fixture(scope="session")
@@ -415,26 +420,8 @@ def backend(request):
     return BackendConfig(backend_type=opt)
 
 
-@pytest.fixture(scope="session")
-def router(request, backend):
-    if request.config.getoption("--no-dut", default=False) and backend.is_rust_v2:
-        raise pytest.UsageError("--no-dut requires the venue-owning router backend, not rust-v2")
-    if backend.is_rust_v2:
-        # The rust-v2 lane brings up tollgated/mintd/merchantd itself
-        # (lib/tollgate_rs.py); there is no router to drive.
-        return None
-    if IS_MOCK_MODE:
-        log.info("TOLLGATE_MOCK=1 — using MockRouter (no physical router needed)")
-        phone_ip = os.environ.get("TOLLGATE_CLIENT_IP", "10.0.0.100")
-        phone_mac = os.environ.get("TOLLGATE_CLIENT_MAC", "00:11:22:33:44:55")
-        mock = MockRouter(
-            host="127.0.0.1",
-            phone_ip=phone_ip,
-            phone_mac=phone_mac,
-            backend=backend,
-        )
-        return mock
-
+def _acquire_venue(request):
+    binding = None
     # Venue decision (#232 convergence): forced/direct/auto — see plan_venue.
     # A resolved venue that then fails is FATAL (rc=4): falling back to direct
     # while a place may be held would put two sessions on one DUT.
@@ -521,6 +508,7 @@ def router(request, backend):
                 )
                 pytest.exit(f"labgrid venue mutex unavailable: {e}{hint}", returncode=4)
             request.addfinalizer(stack.close)
+            binding = venue_plan.binding
             apply_venue_env(
                 venue_plan.binding.entry,
                 respect_existing=venue_plan.origin == "address-match",
@@ -534,10 +522,41 @@ def router(request, backend):
         elif venue_plan.detail:
             log.info("router venue: %s — legacy env path", venue_plan.detail)
 
-    # Keep claim validation, venue acquisition and its finalizer above intact.
-    # Return before constructing Router or discovering any client addresses.
+    return binding
+
+
+@pytest.fixture(scope="session")
+def venue_ownership(request, backend):
+    """Explicit venue handle; None is never evidence of ownership."""
+    if not request.config.getoption("--no-dut", default=False) or backend.is_rust_v2:
+        raise pytest.UsageError("venue_ownership requires --no-dut and a venue backend")
+    binding = _acquire_venue(request)
+    if binding is None:
+        raise pytest.UsageError("--no-dut venue_ownership requires an acquired venue")
+    return binding
+
+
+@pytest.fixture(scope="session")
+def router(request, backend):
     if request.config.getoption("--no-dut", default=False):
+        raise pytest.UsageError("--no-dut forbids device fixture router; use venue_ownership")
+    if backend.is_rust_v2:
+        # The rust-v2 lane brings up tollgated/mintd/merchantd itself
+        # (lib/tollgate_rs.py); there is no router to drive.
         return None
+    if IS_MOCK_MODE:
+        log.info("TOLLGATE_MOCK=1 — using MockRouter (no physical router needed)")
+        phone_ip = os.environ.get("TOLLGATE_CLIENT_IP", "10.0.0.100")
+        phone_mac = os.environ.get("TOLLGATE_CLIENT_MAC", "00:11:22:33:44:55")
+        mock = MockRouter(
+            host="127.0.0.1",
+            phone_ip=phone_ip,
+            phone_mac=phone_mac,
+            backend=backend,
+        )
+        return mock
+
+    _acquire_venue(request)
 
     host = os.environ.get("TOLLGATE_SSH_HOST") or os.environ.get("ROUTER_IP")
     identity_file = os.environ.get("TOLLGATE_SSH_KEY", "")
@@ -683,7 +702,11 @@ def _degrade_session_to_skips(request, reason: str) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def deploy_session(request, router, backend, results_dir):
+def deploy_session(request, backend, results_dir):
+    if request.config.getoption("--no-dut", default=False):
+        yield
+        return
+    router = request.getfixturevalue("router")
     if backend.is_rust_v2:
         # No deployment and no HTTP health check: the rust-v2 tests start
         # and stop their own nodes.
@@ -1140,6 +1163,17 @@ def pytest_runtest_setup(item):
 
 
 def pytest_collection_modifyitems(config, items):
+    if config.getoption("--no-dut", default=False):
+        refused = []
+        for item in items:
+            forbidden = DEVICE_FIXTURES.intersection(item.fixturenames)
+            if item.get_closest_marker("venue_only") is None or forbidden:
+                reason = ("forbidden device fixtures: " + ", ".join(sorted(forbidden))
+                          if forbidden else "missing explicit venue_only marker")
+                refused.append(f"{item.nodeid}: {reason}")
+        if refused:
+            raise pytest.UsageError("--no-dut collection refused before setup:\n" + "\n".join(refused))
+
     # --read-only commissions: config/destructive tests cannot run without
     # mutating the router — skip them up front with a visible reason.
     if config.getoption("--read-only"):

@@ -17,6 +17,9 @@ class Config:
     def __init__(self, **options):
         self.options = {'no-dut': True, 'preflight': 'off', **options}
 
+    def addinivalue_line(self, *args):
+        pass
+
     def getoption(self, name, default=None):
         return self.options.get(name.lstrip('-'), default)
 
@@ -81,7 +84,7 @@ def test_primary_fixture_retains_venue_lifecycle(cf, monkeypatch):
     finalizers = []
     request = NS(config=Config(client='linux'), session=NS(), addfinalizer=finalizers.append)
     monkeypatch.setenv('TOLLGATE_SSH_HOST', 'must-not-connect.invalid')
-    assert body(cf.router)(request, NS(is_rust_v2=False)) is None
+    assert body(cf.venue_ownership)(request, NS(is_rust_v2=False)) is binding
     assert calls == [('guard', True), 'acquire', 'env']
     finalizers.pop()()
     assert calls[-1] == 'release'
@@ -90,7 +93,7 @@ def test_primary_fixture_retains_venue_lifecycle(cf, monkeypatch):
 @pytest.mark.parametrize('name', ['adb', 'secondary_router', 'chain_routers', 'all_routers', 'serial_console', 'cashu', 'm5_mint', 'wifi', 'connected_wifi', 'test_pricing', 'minted_token'])
 def test_device_fixtures_fail_closed(cf, name):
     with pytest.raises(pytest.UsageError, match='no-dut'):
-        cf.pytest_fixture_setup(NS(argname=name), NS(config=Config()))
+        cf.pytest_fixture_setup(NS(argname=name, cache_key=lambda request: None), NS(config=Config()))
 
 
 def test_unrelated_fixture_and_hardware_mode_unchanged(cf):
@@ -130,7 +133,7 @@ def test_session_hooks_never_probe_or_quiesce(cf, monkeypatch):
 
 
 def test_deploy_none_has_no_setup_or_teardown_io(cf, tmp_path):
-    gen = body(cf.deploy_session)(NS(config=Config()), None, NS(is_rust_v2=False), str(tmp_path))
+    gen = body(cf.deploy_session)(NS(config=Config()), NS(is_rust_v2=False), str(tmp_path))
     next(gen)
     with pytest.raises(StopIteration):
         next(gen)
@@ -150,3 +153,36 @@ def test_required_skip_still_fails(cf):
 def test_container_autouse_never_prepares_device(cf):
     request = NS(config=Config(client='container'), getfixturevalue=Mock(side_effect=AssertionError('fixture lookup')))
     assert body(cf.container_nds_preflight)(request) is None
+
+
+@pytest.mark.parametrize('marker,names', [(False, []), (True, ['dependent', 'adb']), (True, ['router'])])
+def test_admission_static_closure(cf, marker, names):
+    item = NS(fixturenames=names, get_closest_marker=lambda name: marker or None, nodeid='child')
+    with pytest.raises(pytest.UsageError, match='collection refused before setup'):
+        cf.pytest_collection_modifyitems(Config(), [item])
+
+
+def test_admission_empty_and_normal(cf):
+    cf.pytest_collection_modifyitems(Config(), [])
+    cf.pytest_collection_modifyitems(Config(**{'no-dut': False}), [])
+
+
+@pytest.mark.parametrize('no_dut,rust', [(False, False), (True, True)])
+def test_ownership_rejects_wrong_mode(cf, no_dut, rust):
+    with pytest.raises(pytest.UsageError, match='venue_ownership requires'):
+        body(cf.venue_ownership)(NS(config=Config(**{'no-dut': no_dut})), NS(is_rust_v2=rust))
+
+
+def test_ownership_never_fakes_acquisition(cf, monkeypatch):
+    monkeypatch.setattr(cf, '_acquire_venue', lambda request: None)
+    with pytest.raises(pytest.UsageError, match='acquired venue'):
+        body(cf.venue_ownership)(NS(config=Config()), NS(is_rust_v2=False))
+
+
+def test_normal_deploy_resolves_router(cf, tmp_path):
+    calls = []
+    req = NS(config=Config(**{'no-dut': False}), getfixturevalue=lambda name: calls.append(name))
+    gen = body(cf.deploy_session)(req, NS(is_rust_v2=False), str(tmp_path))
+    next(gen)
+    with pytest.raises(StopIteration): next(gen)
+    assert calls == ['router']

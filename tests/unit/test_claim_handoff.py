@@ -713,9 +713,9 @@ class TestNoClaimIsByteIdenticalToBase:
         head_log = self._drive(root_conftest, FakeRequest())
 
         assert base_log, "the base fixture must actually have taken the venue path"
-        # New opt-in lookup is pure; pin exactly two reads while preserving
+        # New opt-in lookup is pure; pin exactly one read while preserving
         # the full legacy venue/claim/other-option call-order comparison.
-        assert head_log.count(("getoption", "--no-dut")) == 2
+        assert head_log.count(("getoption", "--no-dut")) == 1
         assert [entry for entry in head_log if entry != ("getoption", "--no-dut")] == base_log
 
     def test_the_auto_skip_path_is_unchanged_too(self, tmp_path, monkeypatch):
@@ -727,9 +727,9 @@ class TestNoClaimIsByteIdenticalToBase:
         request_a, request_b = FakeRequest(args=["tests/unit/test_x.py"]), FakeRequest(args=["tests/unit/test_x.py"])
         base_log = self._drive(base, request_a)
         head_log = self._drive(root_conftest, request_b)
-        # New opt-in lookup is pure; pin exactly two reads while preserving
+        # New opt-in lookup is pure; pin exactly one read while preserving
         # the full legacy venue/claim/other-option call-order comparison.
-        assert head_log.count(("getoption", "--no-dut")) == 2
+        assert head_log.count(("getoption", "--no-dut")) == 1
         assert [entry for entry in head_log if entry != ("getoption", "--no-dut")] == base_log
         assert not any(entry[0] == "venue_mutex" for entry in head_log)
 
