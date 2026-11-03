@@ -13,7 +13,9 @@
 #   scripts/lab/run-lab.sh up          # boot + provision + install + verify
 #   scripts/lab/run-lab.sh verify      # re-run the TollGate verification only
 #   scripts/lab/run-lab.sh smoke       # run the pytest smoke proof
-#   scripts/lab/run-lab.sh purchase    # drive one purchase (see RAIL STATUS below)
+#   scripts/lab/run-lab.sh client up   # a real LAN client (netns) behind br-lan
+#   scripts/lab/run-lab.sh gate        # prove the gate ENFORCES (counter moves)
+#   scripts/lab/run-lab.sh purchase    # drive one purchase, assert the flip
 #   scripts/lab/run-lab.sh down        # tear everything down
 #   scripts/lab/run-lab.sh status      # show what is running
 #
@@ -23,15 +25,21 @@
 #   LAB_ROUTER     router address (default 10.99.99.1)
 #   LAB_QUIET      1 = check host load before starting (default 1)
 #
-# RAIL STATUS (measured 2026-10-14, x280, OpenWrt 25.12.5 + tollgate-wrt pre21):
+# RAIL STATUS (measured 2026-11-03, x280, OpenWrt 25.12.5 + tollgate-wrt 0.6.0):
 #   up/verify/smoke  WORK.  :2121 answers kind:10021 in FULL mode and the lab is IDLE.
-#   purchase         DOES NOT WORK on this single-NIC topology, by design of the
-#                    current VM layout: br-lan is both LAN and uplink, so the
-#                    module's `oifname != "br-lan"` reject can never fire and
-#                    nodogsplash never gates (hence never registers) a client.
-#                    The module then correctly refuses with
-#                    kind:21023 code=client-not-registered. Fixing it needs a
-#                    second NIC + second bridge on the router VM. See README.
+#   purchase         WORKS on the two-NIC lab. The router VM has a LAN NIC
+#                    (eth0/br-lan) and a WAN NIC (eth1, 10.98.99.0/24 bridged to
+#                    the host uplink), so `oifname != "br-lan"` is meaningful,
+#                    the gate enforces, and nodogsplash registers the client.
+#                    Measured: reject counter 0 -> 4 after a guest probe;
+#                    `ndsctl clients` shows the client Preauthenticated; and
+#                    purchase-e2e.py exits 0 with session_active false -> true.
+#
+#                    On the OLD single-NIC topology the same command exited 12
+#                    with kind:21023 client-not-registered: br-lan was both LAN
+#                    and uplink, so the reject could never fire and NDS never
+#                    saw a client. That was the module behaving correctly, not a
+#                    product bug. See docs/VIRTUAL-LAB.md.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -168,9 +176,63 @@ cmd_smoke() {
       --timeout="$hard" -p no:cacheprovider
 }
 
+cmd_client() {
+  "$REPO_ROOT/scripts/lab/lab-client.sh" "${1:-up}" "${@:2}"
+}
+
+# The gate-enforcement assertion. Acceptance criterion #1 for the second NIC is
+# that the module's interface-keyed reject counter MOVES: on the single-NIC
+# topology `oifname` was always br-lan, so the rule could never fire and every
+# counter stayed 0 while the lab looked healthy. A probe from the client must
+# make it non-zero; the counter is the only signal that distinguishes
+# "enforced and blocked" from "never evaluated".
+cmd_gate() {
+  local host="${LAB_ROUTER:-10.99.99.1}"
+  local ssh=(sshpass -p "${LAB_ROOT_PASSWORD:-tollgate}" ssh
+             -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+             -o LogLevel=ERROR -o ConnectTimeout=10 "root@$host")
+
+  sudo -n ip netns list 2>/dev/null | awk '$1=="lab-client-ns"{f=1} END{exit !f}' \
+    || die "no lab client namespace; run '$0 client up' first"
+
+  log "probing through the gate from the client namespace"
+  # A blocked probe is the EXPECTED result: the client is preauthenticated, so
+  # its forwarded traffic must be rejected. What matters is that the reject
+  # counter moved, which the next step reads.
+  sudo -n ip netns exec lab-client-ns timeout 8 ping -c 2 -W 2 1.1.1.1 >/dev/null 2>&1 || true
+
+  local out
+  out="$("${ssh[@]}" 'nft -a list chain inet fw4 nds_enforce_forward 2>&1')"
+  printf '%s\n' "$out"
+  if ! printf '%s' "$out" | grep -q 'oifname != "br-lan"'; then
+    die "the module's enforcement rule is absent from nds_enforce_forward"
+  fi
+  local moved
+  moved="$(printf '%s' "$out" | grep 'oifname != "br-lan"' | grep -oE 'packets [0-9]+' | awk '{print $2}')"
+  if [ "${moved:-0}" = "0" ]; then
+    die "the reject counter is still 0 after a client probe — the gate is INERT (single-NIC topology?)"
+  fi
+  log "PASS: gate enforced, reject counter packets=$moved"
+
+  local clients
+  clients="$("${ssh[@]}" 'ndsctl clients 2>/dev/null | grep -c "mac="')"
+  [ "${clients:-0}" -ge 1 ] || die "ndsctl registered no clients — NoDogSplash never saw the lab client"
+  log "PASS: ndsctl clients=$clients"
+}
+
 cmd_purchase() {
-  log "NOTE: the purchase rail is structurally inert on the single-NIC lab."
-  log "      See 'RAIL STATUS' in this file and the README before reading a failure as a product bug."
+  # The lab client is what makes a purchase attributable at all. The module
+  # resolves the payer from the REQUESTING SOCKET (dhcp.leases + ARP) and does
+  # NOT honour ?mac=, so a host-driven POST can only ever be attributed to the
+  # host's own MAC — which NoDogSplash has never associated. purchase-e2e.py
+  # therefore POSTs and polls /balance from inside this namespace.
+  if ! sudo -n ip netns list 2>/dev/null | awk '$1=="lab-client-ns"{f=1} END{exit !f}'; then
+    log "no lab client namespace — creating one"
+    "$REPO_ROOT/scripts/lab/lab-client.sh" up || {
+      log "ERROR: could not create the lab client; the purchase cannot be attributed"
+      return 10
+    }
+  fi
   # A Cashu client is a prerequisite of the purchase, not part of the module.
   # Without one, purchase-e2e.py exits 11 "no minter" — a prerequisite gap that
   # reads like a rail failure. Stage a checksum-verified cdk-cli instead; the
@@ -197,6 +259,9 @@ cmd_down() {
   "$REPO_ROOT/scripts/lab/lab-dns.sh" stop "$LAB_DIR" || true
   # stop-poc removes the tap/bridge but not a macvlan client we may have added.
   sudo ip link del lab-client 2>/dev/null || true
+  # ...and the netns client outlives the bridges it was attached to, leaving a
+  # client whose peer veth dangles. Tear it down explicitly.
+  "$REPO_ROOT/scripts/lab/lab-client.sh" down || true
   if [ -f "$LAB_DIR/run/cdk-mintd.pid" ]; then
     # Do not kill a mint this lab ADOPTED: it belongs to another lab dir (or a
     # hand-run session) and its db lives elsewhere. Measured on a clean-dir run:
@@ -222,8 +287,10 @@ case "${1:-up}" in
   up)       cmd_up ;;
   verify)   cmd_verify ;;
   smoke)    cmd_smoke ;;
+  client)   shift; cmd_client "$@" ;;
+  gate)     cmd_gate ;;
   purchase) cmd_purchase ;;
   down)     cmd_down ;;
   status)   cmd_status ;;
-  *) die "unknown command '${1}': expected up|verify|smoke|purchase|down|status" ;;
+  *) die "unknown command '${1:-}': expected up|verify|smoke|client|gate|purchase|down|status" ;;
 esac

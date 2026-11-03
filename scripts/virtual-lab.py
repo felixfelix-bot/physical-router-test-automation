@@ -61,6 +61,28 @@ DEFAULT_WORKDIR = "~/tollgate-virtual-lab"
 POC_BRIDGE = "tg-poc-br"
 POC_TAP = "tg-poc-tap"
 DEBIAN_TAP = "tg-poc-tap2"
+# ── the WAN side of the router VM ────────────────────────────────────────────
+# The router used to have ONE NIC, bridged into br-lan, which was BOTH the guest
+# LAN and the uplink. Every interface-keyed enforcement rule the module ships is
+# inert under that shape: `20-nds-enforce.nft`'s reject only fires for
+# `oifname != "br-lan"`, and with one NIC the egress interface IS br-lan. So the
+# gate could never enforce, NoDogSplash never registered a client, and
+# `PurchaseSession` correctly refused before taking payment
+# (`kind:21023 client-not-registered`). A second NIC + a second bridge makes
+# WAN-vs-LAN identity real. See docs/VIRTUAL-LAB.md.
+#
+# The name is NOT `tg-poc-tap2`: that name is already the Debian client's tap,
+# and a lab whose WAN and client share one tap is one bridge wearing two hats —
+# the exact defect this exists to remove.
+POC_WAN_BRIDGE = "tg-poc-br-wan"
+POC_WAN_TAP = "tg-poc-wan-tap"
+# The router's second NIC. Its own MAC: two virtio-net devices that present the
+# same MAC make netifd bind both to one device and lose the second interface.
+POC_WAN_MAC = "52:54:00:12:34:57"
+POC_WAN_GATEWAY = "10.98.99.2"
+POC_WAN_ROUTER_IP = "10.98.99.1"
+POC_WAN_HOST_IP = "10.98.99.2/24"
+POC_WAN_SUBNET = "10.98.99.0/24"
 DEBIAN_RAM = 1024
 DEBIAN_IMAGE = "debian-12-generic-amd64.qcow2"
 DEBIAN_IMAGE_URL = f"https://cloud.debian.org/images/cloud/bookworm/latest/{DEBIAN_IMAGE}"
@@ -77,6 +99,7 @@ def apply_net_id(net_id):
     concurrently: one lab per workdir AND per net-id). N=0/None keeps the
     historical names so every existing flow is unchanged."""
     global POC_BRIDGE, POC_TAP, DEBIAN_TAP, POC_SUBNET, POC_GATEWAY, POC_HOST_BRIDGE_IP, DEBIAN_CLIENT_IP, POC_OPENWRT_IP
+    global POC_WAN_BRIDGE, POC_WAN_TAP, POC_WAN_SUBNET, POC_WAN_ROUTER_IP, POC_WAN_HOST_IP, POC_WAN_GATEWAY
     if net_id in (None, 0):
         return
     if not (1 <= int(net_id) <= 254):
@@ -90,6 +113,14 @@ def apply_net_id(net_id):
     POC_HOST_BRIDGE_IP = f"10.99.{n}.2/24"
     POC_DEBIAN_HOST_BRIDGE_IP = f"10.99.{n}.2"
     POC_OPENWRT_IP = f"10.99.{n}.1"
+    # The WAN side moves with the LAN side, on its own /24 one octet below, so
+    # concurrent lanes never share a bridge or an upstream subnet either.
+    POC_WAN_BRIDGE = f"tg-poc{n}-br-wan"
+    POC_WAN_TAP = f"tg-poc{n}-wan-tap"
+    POC_WAN_SUBNET = f"10.98.{n}.0/24"
+    POC_WAN_ROUTER_IP = f"10.98.{n}.1"
+    POC_WAN_HOST_IP = f"10.98.{n}.2/24"
+    POC_WAN_GATEWAY = f"10.98.{n}.2"
     globals()["DEBIAN_CLIENT_IP"] = f"10.99.{n}.100"
 
 
@@ -1173,10 +1204,12 @@ if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
 
 # Clean up old resources
 sudo ip link del {DEBIAN_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_TAP} 2>/dev/null || true
 sudo ip link del {POC_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_BRIDGE} 2>/dev/null || true
 sudo ip link del {POC_BRIDGE} 2>/dev/null || true
 
-# Create bridge and tap
+# Create the LAN bridge and tap
 sudo ip link add name {POC_BRIDGE} type bridge
 sudo ip link set {POC_BRIDGE} up
 sudo ip addr add {POC_HOST_BRIDGE_IP} dev {POC_BRIDGE} 2>/dev/null || true
@@ -1192,9 +1225,36 @@ sudo ip tuntap add dev {POC_TAP} mode tap user "$USER"
 sudo ip link set {POC_TAP} master {POC_BRIDGE}
 sudo ip link set {POC_TAP} up
 
-sudo iptables -C FORWARD -i {POC_BRIDGE} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i {POC_BRIDGE} -j ACCEPT
-sudo iptables -C FORWARD -o {POC_BRIDGE} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 2 -o {POC_BRIDGE} -j ACCEPT
+# Create the WAN bridge and tap. This is the second NIC's uplink: the router's
+# WAN leg (10.98.99.0/24) lives here and is bridged to the host's real uplink, so
+# guest->internet still works while WAN and LAN stay distinct interfaces on the
+# guest. Without it the router has one NIC that is both, and every
+# interface-keyed rule (the module's `oifname != "br-lan"` reject included) is
+# inert — the lab then "passes" a gate it never evaluated.
+sudo ip link add name {POC_WAN_BRIDGE} type bridge
+sudo ip link set {POC_WAN_BRIDGE} up
+sudo ip addr add {POC_WAN_HOST_IP} dev {POC_WAN_BRIDGE} 2>/dev/null || true
+
+_wan_subnet=$(ip -4 route show exact {POC_WAN_SUBNET} | grep -v "dev {POC_WAN_BRIDGE}" | head -1)
+if [ -n "$_wan_subnet" ]; then
+  _wan_dev=$(echo "$_wan_subnet" | sed -n 's/.*dev \\([^ ]*\\).*/\\1/p')
+  echo "Route conflict: moving {POC_WAN_SUBNET} from $_wan_dev to {POC_WAN_BRIDGE}"
+  sudo ip route del {POC_WAN_SUBNET} dev "$_wan_dev" 2>/dev/null || true
+fi
+
+sudo ip tuntap add dev {POC_WAN_TAP} mode tap user "$USER"
+sudo ip link set {POC_WAN_TAP} master {POC_WAN_BRIDGE}
+sudo ip link set {POC_WAN_TAP} up
+
+# Host NAT/forwarding for BOTH legs. The router VM forwards client traffic out
+# its WAN leg, so the WAN subnet needs MASQUERADE onto the host's uplink exactly
+# as the LAN subnet does for its own host-originated traffic.
+for br in {POC_BRIDGE} {POC_WAN_BRIDGE}; do
+  sudo iptables -C FORWARD -i "$br" -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i "$br" -j ACCEPT
+  sudo iptables -C FORWARD -o "$br" -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 2 -o "$br" -j ACCEPT
+done
 sudo iptables -t nat -C POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUERADE 2>/dev/null || sudo iptables -t nat -A POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUERADE
+sudo iptables -t nat -C POSTROUTING -s {POC_WAN_SUBNET} ! -o {POC_WAN_BRIDGE} -j MASQUERADE 2>/dev/null || sudo iptables -t nat -A POSTROUTING -s {POC_WAN_SUBNET} ! -o {POC_WAN_BRIDGE} -j MASQUERADE
 
 # Prepare the DUT overlay (--fresh purges it; otherwise state persists #26)
 {overlay_snippet}
@@ -1214,6 +1274,8 @@ nohup qemu-system-x86_64 \
   -drive file="$disk",if=virtio,format=qcow2 \
   -netdev tap,id=lan,ifname={POC_TAP},script=no,downscript=no \
   -device virtio-net-pci,netdev=lan,mac={POC_OPENWRT_MAC} \
+  -netdev tap,id=wan,ifname={POC_WAN_TAP},script=no,downscript=no \
+  -device virtio-net-pci,netdev=wan,mac={POC_WAN_MAC} \
   >"$workdir/run/qemu.stdout" 2>"$workdir/run/qemu.stderr" &
 printf '%s\\n' "$!" > "$pidfile"
 
@@ -1247,6 +1309,19 @@ printf 'Started POC OpenWrt VM pid=%s\\n' "$(cat "$pidfile")"
     if rc != 0:
         print("SSH verification failed.", file=sys.stderr)
         return rc
+
+    # Step 3b: converge the WAN leg (second NIC) BEFORE anything that needs
+    # internet (`apk add` in install-tollgate). A guest provisioned before the
+    # second NIC existed short-circuits the serial provisioner, so this is the
+    # step that actually moves an existing overlay onto the two-NIC shape.
+    print("Converging the router's WAN leg (second NIC)...")
+    wan_rc = provision_wan(args)
+    if wan_rc != 0:
+        print(
+            "WAN leg did not converge — the module's interface-keyed enforcement "
+            "will be INERT on this lab (see docs/VIRTUAL-LAB.md).",
+            file=sys.stderr,
+        )
 
     print("Starting Debian client VM...", flush=True)
     client_pidfile, client_disk = _client_paths(workdir)
@@ -1468,7 +1543,9 @@ ps aux | grep 'qemu-system.*drive file=' | grep -v grep | awk '{{print $2}}' | x
 sleep 1
 
 sudo ip link del {DEBIAN_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_TAP} 2>/dev/null || true
 sudo ip link del {POC_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_BRIDGE} 2>/dev/null || true
 sudo ip link del {POC_BRIDGE} 2>/dev/null || true
 
 printf 'Stopped POC virtual lab\\n'
@@ -1507,8 +1584,14 @@ fi
 printf '\\n== network ==\\n'
 ip link show {POC_BRIDGE} 2>/dev/null || true
 ip link show {POC_TAP} 2>/dev/null || true
+ip link show {POC_WAN_BRIDGE} 2>/dev/null || true
+ip link show {POC_WAN_TAP} 2>/dev/null || true
 ip link show {DEBIAN_TAP} 2>/dev/null || true
 ip addr show {POC_BRIDGE} 2>/dev/null | grep -F 'inet ' || true
+ip addr show {POC_WAN_BRIDGE} 2>/dev/null | grep -F 'inet ' || true
+
+printf '\\n== router WAN leg (second NIC) ==\\n'
+sshpass -p {POC_PASSWORD} ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@{POC_GATEWAY} "ip -4 addr show | grep -E '^[0-9]+:| inet '; echo '-- default routes --'; ip route show default" 2>/dev/null || printf 'unavailable\\n'
 
 printf '\\n== DHCP leases (from OpenWrt) ==\\n'
 sshpass -p {POC_PASSWORD} ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@{POC_GATEWAY} "cat /tmp/dhcp.leases" 2>/dev/null || printf 'unavailable\n'
@@ -1557,9 +1640,14 @@ ps aux | grep qemu | grep -v grep || printf 'No QEMU processes\\n'
 
 printf '\\n== 2. Network (bridge/tap) ==\\n'
 ip addr show {POC_BRIDGE} 2>/dev/null || printf '{POC_BRIDGE} missing\\n'
+ip addr show {POC_WAN_BRIDGE} 2>/dev/null || printf '{POC_WAN_BRIDGE} missing\\n'
 ip link show {POC_TAP} 2>/dev/null | head -2 || printf '{POC_TAP} missing\\n'
+ip link show {POC_WAN_TAP} 2>/dev/null | head -2 || printf '{POC_WAN_TAP} missing\\n'
 ip link show {DEBIAN_TAP} 2>/dev/null | head -2 || printf '{DEBIAN_TAP} missing\\n'
-bridge link show | grep -E '{POC_TAP}|{DEBIAN_TAP}' || printf 'No taps bridged\\n'
+bridge link show | grep -E '{POC_TAP}|{POC_WAN_TAP}|{DEBIAN_TAP}' || printf 'No taps bridged\\n'
+
+printf '\\n== 2b. Module enforcement counters (the gate actually enforcing?) ==\\n'
+sshpass -p {POC_PASSWORD} ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@{POC_GATEWAY} "nft -a list chain inet fw4 nds_enforce_forward 2>&1 | sed 's/^/  /'" 2>/dev/null || printf '  unavailable\\n'
 
 printf '\\n== 3. IP connectivity ==\\n'
 printf 'Pinging {POC_GATEWAY}... '
@@ -1907,8 +1995,82 @@ def run_reseller_scenarios(args: argparse.Namespace) -> int:
     return _print_result(run_local(["bash", "-lc", command], timeout=600))
 
 
+def _wan_config_script() -> str:
+    """Idempotent guest-side convergence of the router's WAN leg.
+
+    Runs over SSH against the *running* guest (not the serial provisioner) for
+    two reasons: it must also converge an overlay that was provisioned before
+    the second NIC existed (the serial provisioner short-circuits on an
+    already-provisioned boot — trap 9), and SSH is the transport that survives a
+    broken network config, because the LAN leg it rides on is never touched here.
+
+    Ordering is deliberate and is what makes this safe to run on a live lab:
+
+    1. Configure `network.wan` on the second NIC and bring it up.
+    2. PROVE the WAN leg works (ping the host's WAN-bridge address) and only
+       then let it own the default route.
+    3. If the WAN leg cannot carry traffic, leave the LAN gateway in place: the
+       single-leg lab keeps working rather than losing its only uplink. A lab
+       with no internet cannot `apk add`, which is the failure this ordering
+       exists to avoid.
+    """
+    return f'''
+set -eu
+dev=$(for d in eth1 eth2; do [ -e "/sys/class/net/$d" ] && echo "$d" && break; done)
+if [ -z "$dev" ]; then
+  echo "WAN_NIC_MISSING: no second NIC present on the guest (eth1/eth2 absent)" >&2
+  exit 4
+fi
+
+# The LAN leg must NOT carry the default route once the WAN leg can: two
+# default routes from two interfaces is the single-NIC hack this replaces.
+uci set network.wan=interface
+uci set network.wan.device="$dev"
+uci set network.wan.proto='static'
+uci set network.wan.ipaddr='{POC_WAN_ROUTER_IP}'
+uci set network.wan.netmask='255.255.255.0'
+uci set network.wan.gateway='{POC_WAN_GATEWAY}'
+uci set network.wan.dns='{POC_WAN_GATEWAY}'
+uci commit network
+/etc/init.d/network reload >/dev/null 2>&1 || /etc/init.d/network restart >/dev/null 2>&1 || true
+
+wan_ip=""
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  wan_ip=$(ip -4 -o addr show dev "$dev" 2>/dev/null | awk '{{print $4}}' | head -1)
+  [ -n "$wan_ip" ] && break
+  sleep 1
+done
+if [ -z "$wan_ip" ]; then
+  echo "WAN_NO_ADDRESS: $dev never got {POC_WAN_ROUTER_IP}" >&2
+  exit 5
+fi
+
+if ping -c 1 -W 3 {POC_WAN_GATEWAY} >/dev/null 2>&1; then
+  uci delete network.lan.gateway 2>/dev/null || true
+  uci commit network
+  /etc/init.d/network reload >/dev/null 2>&1 || true
+  echo "WAN_OK: $dev=$wan_ip gw={POC_WAN_GATEWAY} (default route now on the WAN leg)"
+else
+  echo "WAN_DEGRADED: $dev=$wan_ip cannot reach {POC_WAN_GATEWAY}; keeping the LAN gateway"
+fi
+
+ip -4 -o addr show br-lan | awk '{{print "LAN: " $4}}'
+ip route show default
+'''
+
+
+def provision_wan(args: argparse.Namespace) -> int:
+    """Converge the guest's WAN leg (second NIC). Idempotent."""
+    host = cast(str, args.host)
+    rc = _print_result(_router_ssh(host, _wan_config_script(), timeout=120))
+    return rc
+
+
 def _poc_disk_path(workdir: str) -> str:
     return os.path.join(workdir, "overlays", "tollgate-poc.qcow2")
+
+
+
 
 
 def _vm_running() -> bool:
@@ -2096,6 +2258,14 @@ def build_parser() -> argparse.ArgumentParser:
     _ = verify_parser.add_argument("--host", default=DEFAULT_HOST)
     _ = verify_parser.add_argument("--timeout", type=int, default=120)
     verify_parser.set_defaults(func=verify_lab)
+
+    wan_parser = subparsers.add_parser(
+        "provision-wan",
+        help="Converge the router VM's WAN leg on its second NIC (idempotent)",
+    )
+    _ = wan_parser.add_argument("--host", default=DEFAULT_HOST)
+    _ = wan_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
+    wan_parser.set_defaults(func=provision_wan)
 
     snap_parser = subparsers.add_parser("snapshot", help="QEMU snapshot management for the POC VM")
     snap_sub = snap_parser.add_subparsers(dest="snapshot_command", required=True)

@@ -16,65 +16,108 @@ Read this before treating any failure as a product bug.
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Router VM boots | **WORKS** | `logs/serial.log`: OpenWrt 25.12.5, `br-lan: port 1(eth0) entered forwarding state` |
+| Router VM boots | **WORKS** | `logs/serial.log`: OpenWrt 25.12.5, `br-lan: port 1(eth0) entered forwarding state`, `eth1` on the WAN bridge |
 | tollgate-wrt installs | **WORKS** | `OK: 42.2 MiB in 204 packages`; `apk info -v` → `tollgate-wrt-0.6.0_alpha4_pre21-r1` |
 | `:2121` answers `kind:10021` | **WORKS** | `{"kind":10021,…}` HTTP 200 full mode, 6 `price_per_step` tags |
 | Session is IDLE at rest | **WORKS** | `{"status":1,"session_active":false,…}` |
 | Smoke proof (pytest) | **WORKS** | `4 passed`; negative control fails correctly |
-| **Purchase → session flip** | **DOES NOT WORK here** | `kind:21023 code=client-not-registered` — see below |
+| Gate **enforces** (two NICs) | **WORKS** | reject counter `packets 0` → `4` after a client probe; `ndsctl clients` → 1 |
+| **Purchase → session flip** | **WORKS** | `purchase-e2e.py` exit 0: `session_active` false → true, `allotment=88080384` |
 
-### Why the purchase rail is inert on this topology (measured, not guessed)
+### Why the second NIC is a prerequisite, not an enhancement (measured)
 
-The VM router has **one NIC** (`eth0`, bridged into `br-lan`). That single
-interface is *both* the guest LAN and the uplink. Consequences:
+The router VM used to have **one NIC** (`eth0`, bridged into `br-lan`) which was
+*both* the guest LAN and the uplink. That shape made every interface-keyed
+enforcement rule the module ships **structurally inert**:
 
-1. The module's enforcement rule is
-   `oifname != "br-lan" … reject`. With only one interface, `oifname` is *always*
-   `br-lan`, so **the reject can never fire**. Measured on the guest:
-   ```
-   chain nds_enforce_forward {
-     … meta mark & 0x00030000 == 0x00010000 counter packets 0 drop
-     … meta mark & 0x00030000 == 0x00020000 counter packets 0 accept
-     … oifname != "br-lan" counter packets 0 reject with icmp port-unreachable
-   }
-   ```
-   Every counter is **0**.
-2. Because nothing is gated, **nodogsplash never registers a client**
+1. The rule is `oifname != "br-lan" … reject`. With one interface `oifname` is
+   *always* `br-lan`, so **the reject could never fire**. Measured then, every
+   counter **0**; every counter still 0 after a guest probe.
+2. Nothing was gated, so **nodogsplash never registered a client**
    (`ndsctl clients` → `0`, `client_length: 0`).
 3. The module resolves payer identity from that NDS client list, so its
-   pre-flight refuses before taking payment:
+   pre-flight correctly refused before taking payment:
    ```
    PurchaseSession pre-flight: MAC <mac> not registered in NDS after 5 probes;
    refusing payment before Receive
    POST / -> HTTP 400 {"kind":21023,"tags":{"code":["client-not-registered"]}}
    ```
 
-`ndsctl auth <mac>` also fails (`Failed to authenticate client`) because NDS has
-never seen the MAC. A real DHCP lease *is* obtainable in this topology (measured:
-a macvlan client got `10.99.99.203` and appeared in `/tmp/dhcp.leases`), so the
-L2/DHCP path is fine — the **gate** is what is structurally inert.
+**That refusal was the module behaving correctly** — which is exactly why the fix
+had to be the topology, never the module. `ndsctl auth <mac>` also failed
+(`Failed to authenticate client`) because NDS had never seen the MAC. A real
+DHCP lease *was* obtainable even then, so L2/DHCP was always fine; the **gate**
+was what was inert.
 
-**This refusal is the module behaving correctly.** Do not "fix" it by weakening the
-module. The lab topology is what must change.
+### The fix, and the evidence it works
 
-### The fix (follow-up work, not yet done)
+The router VM now has **two NICs on two bridges**:
 
-Give the router VM a **second NIC + second bridge**: WAN on `tap2`/`br-wan`, LAN
-staying on `br-lan`. Then `oifname != "br-lan"` becomes meaningful, the gate
-enforces, nodogsplash registers the client, and the purchase path becomes
-exercisable. This is the same prerequisite the physical-router playbook lists for
-any interface-keyed rule. Tracked as `t_94013caf`.
+```
+host:  tg-poc-br     10.99.99.2/24   (LAN)     tg-poc-br-wan  10.98.99.2/24  (WAN)
+guest: br-lan        10.99.99.1/24   (eth0)    eth1           10.98.99.1/24, default via 10.98.99.2
+```
 
-### What the harness now does about it
+Measured on the live two-NIC lab:
+
+1. **Gate enforces.** After a probe from the client namespace,
+   `nft -a list chain inet fw4 nds_enforce_forward` shows the reject rule at
+   `counter packets 4 bytes 336` — it moved from 0. The counter is the *only*
+   signal that separates "enforced and blocked" from "never evaluated", which is
+   why `run-lab.sh gate` asserts it is non-zero rather than merely that the rule
+   exists (the rule existed on the broken lab too).
+2. **NoDogSplash registers the client.** `ndsctl clients` → `1`, with
+   `mac=02:11:22:33:44:55`, `state=Preauthenticated` (and `Authenticated` after a
+   purchase).
+3. **Purchase flips the session.**
+   ```
+   balance BEFORE: {"session_active": false, …, "mac": "02:11:22:33:44:55"}
+   POST (from lab-client-ns) -> HTTP 200
+   session event kind=1022 … {"allotment": ["88080384"], "metric": ["bytes"]}
+   balance AFTER:  {"session_active": true, "allotment": 88080384, …, "mac": "02:11:22:33:44:55"}
+   PASS: purchase accepted, session flipped IDLE->ACTIVE, allotment=88080384
+   ```
+
+### Two things that will waste your day if you skip them
+
+**A purchase must be driven from the client's namespace, not the host.**
+`src/main.go` resolves the payer from the REQUESTING SOCKET (`getMacAddress` over
+`/tmp/dhcp.leases` then ARP) and explicitly does **not** honour `?mac=` — a claim
+it ignored comes back as `X-TollGate-Mac-Claim-Ignored`. `/balance` answers from
+the same resolution. Measured on a router whose session had genuinely flipped:
+
+```
+from the client ns: session_active=true,  allotment=88080384, mac=02:11:22:33:44:55
+from the host:      session_active=false, allotment=0,        mac=72:fc:b0:ec:4c:09
+```
+
+An earlier version of `purchase-e2e.py` POSTed from the host and polled
+`/balance` from the host, and reported **"session did not flip" on a router that
+had**. The assertion was reading the host's session. `purchase-e2e.py` now runs
+both the POST and every `/balance` read inside the lab client namespace; only
+minting happens on the host (the mint listens on the host's bridge address).
+
+**The module's own restart is what returns the lab to IDLE.** To re-run the
+purchase assertion, restart the module rather than recreating the client:
+
+```bash
+sshpass -p "$TOLLGATE_SSH_PASSWORD" ssh root@10.99.99.1 /etc/init.d/tollgate-wrt restart
+```
+
+### What the harness proves, and how to run it
+
+```bash
+scripts/lab/run-lab.sh client up    # a real LAN client (netns + veth + DHCP)
+scripts/lab/run-lab.sh gate         # counter must move, NDS must register
+scripts/lab/run-lab.sh purchase     # mint, pay from the client, assert the flip
+```
 
 `scripts/lab/purchase-e2e.py` is a **real** end-to-end driver, not a stub: it
 mints an actual Cashu token from the lab fakewallet mint and POSTs it to `:2121`.
-On the current single-NIC topology it exits **12** (a `kind:21023` error event,
-not a session event) — because the module correctly refuses an unregistered
-client. The exit code is the honest signal: **0 only when the session flipped**.
-Once `t_94013caf` lands the second NIC, the same command must go green with no
-change to the script. If it still does not, the topology fix or the module is
-wrong — not the test.
+Its exit code is the honest signal — **0 only when the session flipped**, 14 when
+it did not. On the old single-NIC topology the same command exited **12** with
+`kind:21023`; that exit code was itself the evidence that the topology, not the
+module, was wrong.
 
 Token minting needs a Cashu client, and **neither one is installed by default**
 (this was a measured dead end: `pip install cashu` does not resolve because its
@@ -185,10 +228,38 @@ no route to the internet at all.
 | Portal UI | `10.99.99.1:2051` | uhttpd |
 | LuCI / admin | `10.99.99.1:8080` | uhttpd |
 | Fake Cashu mint | `10.99.99.2:8383` | CDK `fakewallet`, settles in ~1s, free |
-| Lab client (optional) | DHCP on `10.99.99.0/24` | macvlan `lab-client` |
+| Lab client (optional) | DHCP on `10.99.99.0/24` | netns + veth `lab-client-ns` (see below) |
+| Host WAN bridge | `10.98.99.2/24` | on `tg-poc-br-wan`; the router's uplink |
+| Router WAN leg | `10.98.99.1` | `eth1`, default via `10.98.99.2` |
 
-Bridges/taps: `tg-poc-br` (bridge), `tg-poc-tap` (router). Router MAC
-`52:54:00:12:34:56`.
+Bridges/taps: `tg-poc-br` (LAN bridge), `tg-poc-tap` (router LAN NIC),
+`tg-poc-br-wan` (WAN bridge), `tg-poc-wan-tap` (router WAN NIC),
+`tg-poc-tap2` (Debian client). Router MACs `52:54:00:12:34:56` (LAN) and
+`52:54:00:12:34:57` (WAN) — two virtio-net devices must not share a MAC, or
+netifd binds both to one device and the second interface disappears.
+
+The WAN tap is deliberately **not** named `tg-poc-tap2`: that name is already the
+Debian client's tap, and a lab whose uplink and client share one tap is one
+bridge wearing two hats — the exact defect the second NIC exists to remove.
+
+### The lab client (`lab-client.sh`)
+
+A purchase can only be attributed to a client the router can *see*, so the harness
+needs a real LAN client:
+
+```bash
+scripts/lab/lab-client.sh up        # create it (netns + veth + real DHCP lease)
+scripts/lab/lab-client.sh status    # mac/ip/route/NDS visibility
+scripts/lab/lab-client.sh exec curl http://10.99.99.1:2121/balance
+scripts/lab/lab-client.sh down
+```
+
+It is a **network namespace with a veth pair** into `br-lan`, running a real DHCP
+client against the router's dnsmasq — not a macvlan. A macvlan port gets a lease
+but never an NDS association, and cannot transmit frames whose source MAC differs
+from its own on the same bridge without hairpinning. Measured with the netns
+client: `02:11:22:33:44:55` → `10.99.99.203` in `/tmp/dhcp.leases`, and it appears
+in `ndsctl clients` as `state=Preauthenticated`.
 
 Credentials: from `TOLLGATE_SSH_PASSWORD`, else `pta/.env`, else a generated
 24-char password. The documented lab convention is `tollgate` — set it in `.env`
@@ -205,16 +276,20 @@ TOLLGATE_LUCI_PASSWORD=tollgate
 
 ```
 scripts/lab/
-  run-lab.sh                # entry point: up | verify | smoke | purchase | down | status
+  run-lab.sh                # entry point: up | verify | smoke | client | gate | purchase | down | status
   serial-drive.py           # serial-console driver (talks to QEMU's serial socket)
   provision-lab-router.py   # idempotent: sets LAN 10.99.99.1, password, SSH, firewall
   configure-fake-mint.py    # repoints accepted_mints at the lab fakewallet mint
-  purchase-e2e.py           # one purchase + the session-flip assertion
+  purchase-e2e.py           # one purchase from the client ns + the session-flip assertion
+  mint-token.py             # host-side mint helper (cashu wallet; alt. to cdk-cli)
+  lab-client.sh             # netns+veth LAN client with a real DHCP lease + NDS presence
+  lab-dns.sh                # resolver serving EVERY lab leg (LAN and WAN)
   start-fake-mint.sh        # CDK fakewallet mint on :8383
-  create-lab-client.sh      # macvlan client with its own MAC + real DHCP
+  create-lab-client.sh      # legacy macvlan client (superseded by lab-client.sh)
   fetch-apk-closure.sh      # mirror apk feed indexes for offline installs
-scripts/virtual-lab.py      # extended: install-tollgate, verify-lab
+scripts/virtual-lab.py      # extended: install-tollgate, verify-lab, provision-wan
 tests/api/test_virtual_lab_router_smoke.py   # the smoke gate
+tests/api/test_virtual_lab_second_nic.py     # the two-NIC topology + purchase contract
 ```
 
 `__WORKDIR__` is `$LAB_DIR` (default `~/tollgate-virtual-lab`), holding
@@ -251,19 +326,21 @@ a gate.
 scripts/lab/run-lab.sh down
 ```
 
-Removes the VMs via `stop-poc`, deletes the `lab-client` macvlan, and stops the
-mint and the lab resolver — **unless this lab dir adopted them**. `up` will
-happily reuse a `:8383` mint or a `:53` forwarder that another lab dir (or a
-hand-run session) started; those are recorded as adopted and left running, with
-a line saying so. Measured: a clean-dir run adopted
-`~/cdk-mint/cdk-mintd --work-dir ~/meshlink-lab/mint`, and the old teardown
-would have killed it out from under that other lab.
+Removes the VMs via `stop-poc`, deletes the `lab-client` macvlan **and** the
+`lab-client-ns` namespace, and stops the mint and the lab resolver — **unless this
+lab dir adopted them**. `up` will happily reuse a `:8383` mint or a `:53`
+forwarder that another lab dir (or a hand-run session) started; those are recorded
+as adopted and left running, with a line saying so. Measured: a clean-dir run
+adopted `~/cdk-mint/cdk-mintd --work-dir ~/meshlink-lab/mint`, and the old
+teardown would have killed it out from under that other lab.
 
 If something was left behind:
 
 ```bash
 sudo pkill -f 'qemu-system-x86_64.*tollgate-poc'
-sudo ip link del tg-poc-tap 2>/dev/null; sudo ip link del tg-poc-br 2>/dev/null
+sudo ip link del tg-poc-wan-tap 2>/dev/null; sudo ip link del tg-poc-br-wan 2>/dev/null
+sudo ip link del tg-poc-tap 2>/dev/null;     sudo ip link del tg-poc-br 2>/dev/null
+sudo ip netns del lab-client-ns 2>/dev/null
 sudo ip link del lab-client 2>/dev/null
 ```
 
@@ -301,3 +378,27 @@ Snapshots: `virtual-lab.py snapshot create|list|restore|delete <name>` (VM stopp
 9. **A fresh boot also reaches a shell prompt**, so a provisioner that keys on
    "already at a prompt → already provisioned" skips the addressing plan
    entirely. Check the actual LAN address, not the prompt.
+10. **`ip netns list` is empty unprivileged.** It reads `/run/netns`, which is
+    root-owned, so a naive existence check reports a *live* client as missing.
+    It also appends ` (id: N)` once the namespace has been entered, which breaks
+    a `grep -qx` match — compare the leading field only.
+11. **`kill -0` returns EPERM on root-owned daemons.** `lab-dns.sh` starts
+    dnsmasq as root; it then drops to `nobody`. Polling it with an unprivileged
+    `kill -0` reads EPERM as "dead", and the script reported "dnsmasq did not
+    stay up" for a forwarder that was healthy. Use `sudo -n kill -0`.
+12. **Binding one resolver to the LAN bridge only breaks the two-NIC lab.** The
+    WAN leg needs DNS too (the router's own `apk add` rides it), so `lab-dns.sh`
+    now serves *every* lab leg and `status` proves each leg is actually bound
+    rather than trusting the pidfile.
+13. **Two virtio-net devices must not share a MAC.** `netifd` binds both to one
+    device, so the second interface silently disappears and the topology
+    reverts to single-NIC — with the gate inert again. Hence
+    `52:54:00:12:34:56` / `52:54:00:12:34:57`.
+14. **The serial provisioner short-circuits an already-provisioned overlay**, so
+    an existing lab never gains the WAN leg from it. `start-poc` converges the
+    WAN leg over SSH *before* `install-tollgate`, and `provision-wan` re-runs it
+    idempotently on a live lab.
+15. **A host-side `/balance` read is not your client's session.** The module keys
+    both the POST and `/balance` on the requesting socket, so polling from the
+    host reports the host's MAC. That single mistake made a working router look
+    like it had not flipped. Read from the client namespace.

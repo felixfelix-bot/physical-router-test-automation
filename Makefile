@@ -348,12 +348,12 @@ full-all: ## Run all test suites (lint + playwright + degraded + upstream)
 #
 #  Deliberately does NOT call require_hardware_lock: this lane is virtual, so
 #  holding the physical bench lock here would serialize virtual work behind
-#  hardware for no reason. See docs/VIRTUAL-LAB.md for the rail's status —
-#  in particular, the purchase/session-flip path is inert until the router VM
-#  gets a second NIC, and the harness says so rather than reporting green.
+#  hardware for no reason. See docs/VIRTUAL-LAB.md for the rail's status — the
+#  router VM has a LAN NIC and a WAN NIC, so the module's interface-keyed gate
+#  actually enforces and the purchase/session-flip path is exercisable.
 # ===========================================================================
 
-.PHONY: lab-up lab-smoke lab-verify lab-purchase lab-down lab-status lab-fetch-apk lab-dns
+.PHONY: lab-up lab-smoke lab-verify lab-purchase lab-down lab-status lab-fetch-apk lab-dns lab-client lab-gate
 
 lab-up: ## Start the virtual TollGate lab (boot + install + verify) [qemu]
 	@bash scripts/lab/run-lab.sh up
@@ -364,13 +364,19 @@ lab-fetch-apk: ## Fetch+verify a tollgate-wrt x86_64 apk into the lab dir [net]
 lab-dns: ## Start the lab resolver on the host bridge (required for apk add)
 	@bash scripts/lab/lab-dns.sh start "$${LAB_DIR:-$$HOME/tollgate-virtual-lab}"
 
+lab-client: ## Add a real LAN client (netns + veth + DHCP) behind br-lan [qemu]
+	@bash scripts/lab/run-lab.sh client up
+
 lab-smoke: ## Run the virtual-lab router smoke gate [pytest]
 	@bash scripts/lab/run-lab.sh smoke
 
 lab-verify: ## Assert the lab is a working TollGate lab (:2121 answers kind:10021)
 	@bash scripts/lab/run-lab.sh verify
 
-lab-purchase: ## Drive one purchase (inert on single-NIC VM — see docs/VIRTUAL-LAB.md)
+lab-gate: ## Prove the gate ENFORCES (reject counter moves, NDS registers the client)
+	@bash scripts/lab/run-lab.sh gate
+
+lab-purchase: ## Drive one purchase from the lab client; asserts the session flips
 	@bash scripts/lab/run-lab.sh purchase
 
 lab-status: ## Show virtual-lab VM + :2121 status
