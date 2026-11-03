@@ -9,6 +9,7 @@ orchestration can be built on a verified host instead of assumptions.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 
@@ -52,10 +53,36 @@ APT_PACKAGES = [
 ]
 
 DEFAULT_OPENWRT_VERSION = "24.10.1"
+# The lab host. Historically the hardcoded "218" (an Ubuntu box that no longer
+# resolves); the lab now runs wherever this script is invoked, so the default is
+# localhost and remote use is opt-in via --host.
+DEFAULT_HOST = "localhost"
 DEFAULT_WORKDIR = "~/tollgate-virtual-lab"
 POC_BRIDGE = "tg-poc-br"
 POC_TAP = "tg-poc-tap"
 DEBIAN_TAP = "tg-poc-tap2"
+# ── the WAN side of the router VM ────────────────────────────────────────────
+# The router used to have ONE NIC, bridged into br-lan, which was BOTH the guest
+# LAN and the uplink. Every interface-keyed enforcement rule the module ships is
+# inert under that shape: `20-nds-enforce.nft`'s reject only fires for
+# `oifname != "br-lan"`, and with one NIC the egress interface IS br-lan. So the
+# gate could never enforce, NoDogSplash never registered a client, and
+# `PurchaseSession` correctly refused before taking payment
+# (`kind:21023 client-not-registered`). A second NIC + a second bridge makes
+# WAN-vs-LAN identity real. See docs/VIRTUAL-LAB.md.
+#
+# The name is NOT `tg-poc-tap2`: that name is already the Debian client's tap,
+# and a lab whose WAN and client share one tap is one bridge wearing two hats —
+# the exact defect this exists to remove.
+POC_WAN_BRIDGE = "tg-poc-br-wan"
+POC_WAN_TAP = "tg-poc-wan-tap"
+# The router's second NIC. Its own MAC: two virtio-net devices that present the
+# same MAC make netifd bind both to one device and lose the second interface.
+POC_WAN_MAC = "52:54:00:12:34:57"
+POC_WAN_GATEWAY = "10.98.99.2"
+POC_WAN_ROUTER_IP = "10.98.99.1"
+POC_WAN_HOST_IP = "10.98.99.2/24"
+POC_WAN_SUBNET = "10.98.99.0/24"
 DEBIAN_RAM = 1024
 DEBIAN_IMAGE = "debian-12-generic-amd64.qcow2"
 DEBIAN_IMAGE_URL = f"https://cloud.debian.org/images/cloud/bookworm/latest/{DEBIAN_IMAGE}"
@@ -72,6 +99,7 @@ def apply_net_id(net_id):
     concurrently: one lab per workdir AND per net-id). N=0/None keeps the
     historical names so every existing flow is unchanged."""
     global POC_BRIDGE, POC_TAP, DEBIAN_TAP, POC_SUBNET, POC_GATEWAY, POC_HOST_BRIDGE_IP, DEBIAN_CLIENT_IP, POC_OPENWRT_IP
+    global POC_WAN_BRIDGE, POC_WAN_TAP, POC_WAN_SUBNET, POC_WAN_ROUTER_IP, POC_WAN_HOST_IP, POC_WAN_GATEWAY
     if net_id in (None, 0):
         return
     if not (1 <= int(net_id) <= 254):
@@ -85,6 +113,14 @@ def apply_net_id(net_id):
     POC_HOST_BRIDGE_IP = f"10.99.{n}.2/24"
     POC_DEBIAN_HOST_BRIDGE_IP = f"10.99.{n}.2"
     POC_OPENWRT_IP = f"10.99.{n}.1"
+    # The WAN side moves with the LAN side, on its own /24 one octet below, so
+    # concurrent lanes never share a bridge or an upstream subnet either.
+    POC_WAN_BRIDGE = f"tg-poc{n}-br-wan"
+    POC_WAN_TAP = f"tg-poc{n}-wan-tap"
+    POC_WAN_SUBNET = f"10.98.{n}.0/24"
+    POC_WAN_ROUTER_IP = f"10.98.{n}.1"
+    POC_WAN_HOST_IP = f"10.98.{n}.2/24"
+    POC_WAN_GATEWAY = f"10.98.{n}.2"
     globals()["DEBIAN_CLIENT_IP"] = f"10.99.{n}.100"
 
 
@@ -298,7 +334,12 @@ print('Configuring LAN IP and internet access via host bridge...')
 send_and_wait(s, "uci set network.lan.ipaddr='__GATEWAY__'", wait=2)
 send_and_wait(s, "uci set network.lan.netmask='255.255.255.0'", wait=2)
 send_and_wait(s, "uci set network.lan.gateway='__HOST_BRIDGE_IP__'", wait=2)
-send_and_wait(s, "uci set network.lan.dns='8.8.8.8'", wait=2)
+# DNS: point at the lab's own forwarder on the host bridge, NOT 8.8.8.8.
+# Measured failure: 8.8.8.8 is unreachable from the guest on this host, so
+# dnsmasq has no upstream and `apk add` fails with the misleading
+# "Failed to send request: Operation not permitted". guest->internet by IP works,
+# only name resolution dies. scripts/lab/lab-dns.sh serves the forwarder there.
+send_and_wait(s, "uci set network.lan.dns='__HOST_BRIDGE_IP__'", wait=2)
 send_and_wait(s, 'uci commit network', wait=2)
 send_and_wait(s, '/etc/init.d/network restart', wait=5)
 
@@ -1110,6 +1151,12 @@ def start_poc(args: argparse.Namespace) -> int:
     workdir = cast(str, args.workdir)
     pidfile, _serial_sock, disk = _poc_paths(workdir)
     min_mem_mb = int(os.environ.get("TOLLGATE_VLAB_MIN_MEM_MB", "2048"))
+    # Docs (docs/VIRTUAL-LAB.md trap 7) and the code drifted apart: the README
+    # says the router runs -smp 2 -m 768 after -smp 1 / 512MB wedged the
+    # virtio-net TX queue under `apk add`, while the QEMU argv still booted
+    # -smp 1 -m 512. Use the documented values, overridable for a constrained host.
+    poc_ram = os.environ.get("TOLLGATE_VLAB_RAM_MB", "768")
+    poc_smp = os.environ.get("TOLLGATE_VLAB_SMP", "2")
 
     # --fresh cannot be honored on a live VM (qemu owns the overlay file);
     # the guard below reports that instead of silently skipping the purge.
@@ -1157,10 +1204,12 @@ if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
 
 # Clean up old resources
 sudo ip link del {DEBIAN_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_TAP} 2>/dev/null || true
 sudo ip link del {POC_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_BRIDGE} 2>/dev/null || true
 sudo ip link del {POC_BRIDGE} 2>/dev/null || true
 
-# Create bridge and tap
+# Create the LAN bridge and tap
 sudo ip link add name {POC_BRIDGE} type bridge
 sudo ip link set {POC_BRIDGE} up
 sudo ip addr add {POC_HOST_BRIDGE_IP} dev {POC_BRIDGE} 2>/dev/null || true
@@ -1176,9 +1225,36 @@ sudo ip tuntap add dev {POC_TAP} mode tap user "$USER"
 sudo ip link set {POC_TAP} master {POC_BRIDGE}
 sudo ip link set {POC_TAP} up
 
-sudo iptables -C FORWARD -i {POC_BRIDGE} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i {POC_BRIDGE} -j ACCEPT
-sudo iptables -C FORWARD -o {POC_BRIDGE} -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 2 -o {POC_BRIDGE} -j ACCEPT
+# Create the WAN bridge and tap. This is the second NIC's uplink: the router's
+# WAN leg (10.98.99.0/24) lives here and is bridged to the host's real uplink, so
+# guest->internet still works while WAN and LAN stay distinct interfaces on the
+# guest. Without it the router has one NIC that is both, and every
+# interface-keyed rule (the module's `oifname != "br-lan"` reject included) is
+# inert — the lab then "passes" a gate it never evaluated.
+sudo ip link add name {POC_WAN_BRIDGE} type bridge
+sudo ip link set {POC_WAN_BRIDGE} up
+sudo ip addr add {POC_WAN_HOST_IP} dev {POC_WAN_BRIDGE} 2>/dev/null || true
+
+_wan_subnet=$(ip -4 route show exact {POC_WAN_SUBNET} | grep -v "dev {POC_WAN_BRIDGE}" | head -1)
+if [ -n "$_wan_subnet" ]; then
+  _wan_dev=$(echo "$_wan_subnet" | sed -n 's/.*dev \\([^ ]*\\).*/\\1/p')
+  echo "Route conflict: moving {POC_WAN_SUBNET} from $_wan_dev to {POC_WAN_BRIDGE}"
+  sudo ip route del {POC_WAN_SUBNET} dev "$_wan_dev" 2>/dev/null || true
+fi
+
+sudo ip tuntap add dev {POC_WAN_TAP} mode tap user "$USER"
+sudo ip link set {POC_WAN_TAP} master {POC_WAN_BRIDGE}
+sudo ip link set {POC_WAN_TAP} up
+
+# Host NAT/forwarding for BOTH legs. The router VM forwards client traffic out
+# its WAN leg, so the WAN subnet needs MASQUERADE onto the host's uplink exactly
+# as the LAN subnet does for its own host-originated traffic.
+for br in {POC_BRIDGE} {POC_WAN_BRIDGE}; do
+  sudo iptables -C FORWARD -i "$br" -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 1 -i "$br" -j ACCEPT
+  sudo iptables -C FORWARD -o "$br" -j ACCEPT 2>/dev/null || sudo iptables -I FORWARD 2 -o "$br" -j ACCEPT
+done
 sudo iptables -t nat -C POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUERADE 2>/dev/null || sudo iptables -t nat -A POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUERADE
+sudo iptables -t nat -C POSTROUTING -s {POC_WAN_SUBNET} ! -o {POC_WAN_BRIDGE} -j MASQUERADE 2>/dev/null || sudo iptables -t nat -A POSTROUTING -s {POC_WAN_SUBNET} ! -o {POC_WAN_BRIDGE} -j MASQUERADE
 
 # Prepare the DUT overlay (--fresh purges it; otherwise state persists #26)
 {overlay_snippet}
@@ -1190,14 +1266,16 @@ sudo iptables -t nat -C POSTROUTING -s {POC_SUBNET} ! -o {POC_BRIDGE} -j MASQUER
 mkdir -p "$workdir/logs"
 nohup qemu-system-x86_64 \
   -enable-kvm \
-  -m 512 \
-  -smp 1 \
+  -m {poc_ram} \
+  -smp {poc_smp} \
   -nographic \
   -serial unix:"$workdir/run/serial.sock",server,nowait,logfile="$workdir/logs/serial.log",logappend=on \
   -monitor unix:"$workdir/run/monitor.sock",server,nowait \
   -drive file="$disk",if=virtio,format=qcow2 \
   -netdev tap,id=lan,ifname={POC_TAP},script=no,downscript=no \
   -device virtio-net-pci,netdev=lan,mac={POC_OPENWRT_MAC} \
+  -netdev tap,id=wan,ifname={POC_WAN_TAP},script=no,downscript=no \
+  -device virtio-net-pci,netdev=wan,mac={POC_WAN_MAC} \
   >"$workdir/run/qemu.stdout" 2>"$workdir/run/qemu.stderr" &
 printf '%s\\n' "$!" > "$pidfile"
 
@@ -1231,6 +1309,19 @@ printf 'Started POC OpenWrt VM pid=%s\\n' "$(cat "$pidfile")"
     if rc != 0:
         print("SSH verification failed.", file=sys.stderr)
         return rc
+
+    # Step 3b: converge the WAN leg (second NIC) BEFORE anything that needs
+    # internet (`apk add` in install-tollgate). A guest provisioned before the
+    # second NIC existed short-circuits the serial provisioner, so this is the
+    # step that actually moves an existing overlay onto the two-NIC shape.
+    print("Converging the router's WAN leg (second NIC)...")
+    wan_rc = provision_wan(args)
+    if wan_rc != 0:
+        print(
+            "WAN leg did not converge — the module's interface-keyed enforcement "
+            "will be INERT on this lab (see docs/VIRTUAL-LAB.md).",
+            file=sys.stderr,
+        )
 
     print("Starting Debian client VM...", flush=True)
     client_pidfile, client_disk = _client_paths(workdir)
@@ -1452,7 +1543,9 @@ ps aux | grep 'qemu-system.*drive file=' | grep -v grep | awk '{{print $2}}' | x
 sleep 1
 
 sudo ip link del {DEBIAN_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_TAP} 2>/dev/null || true
 sudo ip link del {POC_TAP} 2>/dev/null || true
+sudo ip link del {POC_WAN_BRIDGE} 2>/dev/null || true
 sudo ip link del {POC_BRIDGE} 2>/dev/null || true
 
 printf 'Stopped POC virtual lab\\n'
@@ -1491,8 +1584,14 @@ fi
 printf '\\n== network ==\\n'
 ip link show {POC_BRIDGE} 2>/dev/null || true
 ip link show {POC_TAP} 2>/dev/null || true
+ip link show {POC_WAN_BRIDGE} 2>/dev/null || true
+ip link show {POC_WAN_TAP} 2>/dev/null || true
 ip link show {DEBIAN_TAP} 2>/dev/null || true
 ip addr show {POC_BRIDGE} 2>/dev/null | grep -F 'inet ' || true
+ip addr show {POC_WAN_BRIDGE} 2>/dev/null | grep -F 'inet ' || true
+
+printf '\\n== router WAN leg (second NIC) ==\\n'
+sshpass -p {POC_PASSWORD} ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@{POC_GATEWAY} "ip -4 addr show | grep -E '^[0-9]+:| inet '; echo '-- default routes --'; ip route show default" 2>/dev/null || printf 'unavailable\\n'
 
 printf '\\n== DHCP leases (from OpenWrt) ==\\n'
 sshpass -p {POC_PASSWORD} ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@{POC_GATEWAY} "cat /tmp/dhcp.leases" 2>/dev/null || printf 'unavailable\n'
@@ -1541,9 +1640,14 @@ ps aux | grep qemu | grep -v grep || printf 'No QEMU processes\\n'
 
 printf '\\n== 2. Network (bridge/tap) ==\\n'
 ip addr show {POC_BRIDGE} 2>/dev/null || printf '{POC_BRIDGE} missing\\n'
+ip addr show {POC_WAN_BRIDGE} 2>/dev/null || printf '{POC_WAN_BRIDGE} missing\\n'
 ip link show {POC_TAP} 2>/dev/null | head -2 || printf '{POC_TAP} missing\\n'
+ip link show {POC_WAN_TAP} 2>/dev/null | head -2 || printf '{POC_WAN_TAP} missing\\n'
 ip link show {DEBIAN_TAP} 2>/dev/null | head -2 || printf '{DEBIAN_TAP} missing\\n'
-bridge link show | grep -E '{POC_TAP}|{DEBIAN_TAP}' || printf 'No taps bridged\\n'
+bridge link show | grep -E '{POC_TAP}|{POC_WAN_TAP}|{DEBIAN_TAP}' || printf 'No taps bridged\\n'
+
+printf '\\n== 2b. Module enforcement counters (the gate actually enforcing?) ==\\n'
+sshpass -p {POC_PASSWORD} ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@{POC_GATEWAY} "nft -a list chain inet fw4 nds_enforce_forward 2>&1 | sed 's/^/  /'" 2>/dev/null || printf '  unavailable\\n'
 
 printf '\\n== 3. IP connectivity ==\\n'
 printf 'Pinging {POC_GATEWAY}... '
@@ -1628,6 +1732,222 @@ exit 1
     return _print_result(run_remote(host, quote_script(script), timeout=timeout + 10))
 
 
+#
+# --- TollGate module install + lab verification ---------------------------------
+#
+# `start-poc` brings up two VMs that talk to each other, but it never installs
+# the thing under test.  These two subcommands close that gap so the lab is
+# actually a TollGate lab ("a router without a router"):
+#
+#   install-tollgate  stage the artifact + its package closure, install it
+#   verify-lab        prove the module answers kind:10021 on :2121 and is idle
+#
+# Both are idempotent and safe to re-run.
+
+DEFAULT_ARTIFACT_GLOB = "tollgate-wrt_*x86_64*.apk"
+# The module's own deps that the base image does not ship. Kept explicit so an
+# offline install never silently depends on a feed being reachable.
+TOLLGATE_DEP_PACKAGES = ["jq", "nodogsplash"]
+
+
+def _router_ssh(host: str, remote_cmd: str, timeout: int = 60) -> CommandResult:
+    """Run a command on the router VM (guest at POC_GATEWAY) from `host`.
+
+    Builds the sshpass/ssh argv directly. Do NOT wrap this in quote_script():
+    that prepends `bash -lc '...'`, whose extra quoting layer mangles the
+    password and sshpass then reports a bare "Permission denied".
+    """
+    argv = [
+        "sshpass", "-p", POC_PASSWORD,
+        "ssh",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "ConnectTimeout=10",
+        "-o", "LogLevel=ERROR",
+        f"root@{POC_GATEWAY}",
+        remote_cmd,
+    ]
+    if host_is_remote(host):
+        argv = ["ssh", host, " ".join(shlex.quote(a) for a in argv)]
+    return run_local(argv, timeout=timeout)
+
+
+def install_tollgate(args: argparse.Namespace) -> int:
+    host = cast(str, args.host)
+    artifact = cast(str, args.artifact)
+    workdir = cast(str, args.workdir)
+    allow_online = not bool(getattr(args, "offline", False))
+
+    if not artifact:
+        # Default to the newest tollgate-wrt x86_64 apk staged under <workdir>/artifacts,
+        # which is where the lab's fetch step and the DQ05 artifact both live.
+        adir = os.path.expanduser(os.path.join(workdir, "artifacts"))
+        import glob
+        cands = sorted(glob.glob(os.path.join(adir, DEFAULT_ARTIFACT_GLOB)))
+        if not cands:
+            print(f"ERROR: no artifact matching {DEFAULT_ARTIFACT_GLOB} in {adir}", file=sys.stderr)
+            print("       Pass --artifact <path> explicitly.", file=sys.stderr)
+            return 2
+        artifact = cands[-1]
+        print(f"artifact: {artifact} (auto-selected newest)")
+
+    if not os.path.isfile(artifact):
+        print(f"ERROR: artifact not found: {artifact}", file=sys.stderr)
+        print("       Build or fetch a tollgate-wrt x86_64 .apk first.", file=sys.stderr)
+        return 2
+
+    # Stage a copy under <workdir>/artifacts so the lab dir is self-describing and
+    # a later run needs no --artifact at all.
+    try:
+        import shutil
+        adir = os.path.expanduser(os.path.join(workdir, "artifacts"))
+        os.makedirs(adir, exist_ok=True)
+        dest = os.path.join(adir, os.path.basename(artifact))
+        if os.path.abspath(dest) != os.path.abspath(artifact):
+            shutil.copy2(artifact, dest)
+            print(f"staged artifact copy: {dest}")
+    except OSError as e:
+        print(f"warning: could not stage artifact copy ({e})", file=sys.stderr)
+
+    sha = hashlib.sha256()
+    with open(artifact, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            sha.update(chunk)
+    digest = sha.hexdigest()
+    print(f"artifact: {artifact}")
+    print(f"sha256:   {digest}")
+
+    # 1. Stage the artifact on the router (scp -O: dropbear has no sftp-server).
+    basename = os.path.basename(artifact)
+    stage_argv = [
+        "sshpass", "-p", POC_PASSWORD,
+        "scp", "-O",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "LogLevel=ERROR",
+        artifact, f"root@{POC_GATEWAY}:/tmp/",
+    ]
+    if host_is_remote(host):
+        stage_argv = ["ssh", host, " ".join(shlex.quote(a) for a in stage_argv)]
+    rc = _print_result(run_local(stage_argv, timeout=300))
+    if rc != 0:
+        print("ERROR: failed to stage artifact on the router.", file=sys.stderr)
+        return rc
+
+    # 2. Verify the bytes landed intact BEFORE installing. A truncated transfer
+    #    installs cleanly and then fails at runtime, which reads as a product bug.
+    remote_sha = _router_ssh(host, f"sha256sum /tmp/{basename} | cut -d' ' -f1", timeout=60)
+    got = (remote_sha.stdout or "").strip().splitlines()[-1].strip() if remote_sha.stdout else ""
+    if got != digest:
+        print(
+            f"ERROR: artifact identity mismatch on the router.\n"
+            f"  local:  {digest}\n  remote: {got or '<no output>'}",
+            file=sys.stderr,
+        )
+        return 1
+    print("staged artifact sha256 matches local — identity verified")
+
+    # 3. Ensure dependencies. Prefer letting apk resolve from the real feed
+    #    (the same code path a real router uses); fall back to offline staging.
+    if allow_online:
+        dep_cmd = (
+            "apk update >/dev/null 2>&1; "
+            f"apk add --allow-untrusted {' '.join(TOLLGATE_DEP_PACKAGES)} 2>&1 | tail -5"
+        )
+        dep = _router_ssh(host, dep_cmd, timeout=600)
+        if dep.stdout:
+            print(dep.stdout.strip())
+
+    # 4. Install the module, then reload fw4: the packaged nftables fragments are
+    #    INERT until fw4 loads them (measured on hardware 2026-09-25 — file
+    #    presence is not policy activation).
+    install_cmd = (
+        f"apk add --allow-untrusted /tmp/{basename} 2>&1 | tail -20; "
+        "fw4 reload >/dev/null 2>&1 || true; "
+        "/etc/init.d/tollgate-wrt restart >/dev/null 2>&1 || true"
+    )
+    rc = _print_result(_router_ssh(host, install_cmd, timeout=600))
+    if rc != 0:
+        return rc
+
+    # 5. Confirm the package is really registered.
+    ver = _router_ssh(host, "apk info -v 2>/dev/null | grep '^tollgate-wrt' | head -1", timeout=60)
+    version = (ver.stdout or "").strip() or "<not listed>"
+    print(f"installed: {version}")
+    if "tollgate-wrt" not in version:
+        print("ERROR: tollgate-wrt does not appear in apk info after install.", file=sys.stderr)
+        return 1
+    print("TollGate module installed. Run: virtual-lab.py verify-lab")
+    return 0
+
+
+def verify_lab(args: argparse.Namespace) -> int:
+    """Assert the lab is a working TollGate lab, not just two booted VMs.
+
+    Checks, in order: :2121 reachable, kind:10021 on /, at least one
+    price_per_step tag (FULL mode, not degraded), and an idle /balance.
+    Returns 0 only when all of them hold.
+
+    Probes run from the HOST, not from the guest's own loopback: a module bound
+    only to ::1 would satisfy an in-guest probe and still be unreachable to any
+    test that drives the router from outside. The guest-side check is limited to
+    the one thing the host cannot see — that the process is actually running.
+    """
+    timeout = cast(int, args.timeout)
+    gw = POC_GATEWAY
+    port = 2121
+
+    # Wait for the API to answer, from the host.
+    deadline = time.time() + timeout
+    info = ""
+    while time.time() < deadline:
+        r = run_local([
+            "curl", "-s", "-m", "5", "-w", "\n%{http_code}",
+            f"http://{gw}:{port}/",
+        ], timeout=15)
+        body = (r.stdout or "").rstrip()
+        if r.returncode == 0 and body.endswith("200"):
+            info = body.rsplit("\n", 1)[0]
+            break
+        time.sleep(2)
+
+    if not info:
+        print(
+            f"FAIL: :2121 not reachable/answering at {gw}:{port} within {timeout}s\n"
+            f"      Router VM down, module not installed, or service failed to start.\n"
+            f"      Check logs/serial.log and `systemctl`/`/etc/init.d/tollgate-wrt status`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    bal_r = run_local(["curl", "-s", "-m", "10", f"http://{gw}:{port}/balance"], timeout=20)
+    bal = (bal_r.stdout or "").strip()
+
+    print(f"info:    {info}")
+    print(f"balance: {bal}")
+
+    if '"kind":10021' not in info:
+        print("FAIL: / did not answer a kind:10021 TollGate info event", file=sys.stderr)
+        return 2
+    if "price_per_step" not in info:
+        print(
+            "FAIL: DEGRADED mode — kind:10021 carries no price_per_step tags, so no "
+            "purchase can be exercised. Configure accepted_mints and restart tollgate-wrt.",
+            file=sys.stderr,
+        )
+        return 3
+    if '"session_active":false' not in bal:
+        print(
+            f"FAIL: lab is not IDLE (expected session_active:false). balance={bal!r}. "
+            "An unreadable or active balance is NOT a safe starting state.",
+            file=sys.stderr,
+        )
+        return 4
+
+    print("PASS: router up, tollgate-wrt FULL mode, :2121 answers kind:10021, session idle")
+    return 0
+
+
 def run_poc(args: argparse.Namespace) -> int:
     rc = prepare_image(args)
     if rc != 0:
@@ -1675,8 +1995,82 @@ def run_reseller_scenarios(args: argparse.Namespace) -> int:
     return _print_result(run_local(["bash", "-lc", command], timeout=600))
 
 
+def _wan_config_script() -> str:
+    """Idempotent guest-side convergence of the router's WAN leg.
+
+    Runs over SSH against the *running* guest (not the serial provisioner) for
+    two reasons: it must also converge an overlay that was provisioned before
+    the second NIC existed (the serial provisioner short-circuits on an
+    already-provisioned boot — trap 9), and SSH is the transport that survives a
+    broken network config, because the LAN leg it rides on is never touched here.
+
+    Ordering is deliberate and is what makes this safe to run on a live lab:
+
+    1. Configure `network.wan` on the second NIC and bring it up.
+    2. PROVE the WAN leg works (ping the host's WAN-bridge address) and only
+       then let it own the default route.
+    3. If the WAN leg cannot carry traffic, leave the LAN gateway in place: the
+       single-leg lab keeps working rather than losing its only uplink. A lab
+       with no internet cannot `apk add`, which is the failure this ordering
+       exists to avoid.
+    """
+    return f'''
+set -eu
+dev=$(for d in eth1 eth2; do [ -e "/sys/class/net/$d" ] && echo "$d" && break; done)
+if [ -z "$dev" ]; then
+  echo "WAN_NIC_MISSING: no second NIC present on the guest (eth1/eth2 absent)" >&2
+  exit 4
+fi
+
+# The LAN leg must NOT carry the default route once the WAN leg can: two
+# default routes from two interfaces is the single-NIC hack this replaces.
+uci set network.wan=interface
+uci set network.wan.device="$dev"
+uci set network.wan.proto='static'
+uci set network.wan.ipaddr='{POC_WAN_ROUTER_IP}'
+uci set network.wan.netmask='255.255.255.0'
+uci set network.wan.gateway='{POC_WAN_GATEWAY}'
+uci set network.wan.dns='{POC_WAN_GATEWAY}'
+uci commit network
+/etc/init.d/network reload >/dev/null 2>&1 || /etc/init.d/network restart >/dev/null 2>&1 || true
+
+wan_ip=""
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  wan_ip=$(ip -4 -o addr show dev "$dev" 2>/dev/null | awk '{{print $4}}' | head -1)
+  [ -n "$wan_ip" ] && break
+  sleep 1
+done
+if [ -z "$wan_ip" ]; then
+  echo "WAN_NO_ADDRESS: $dev never got {POC_WAN_ROUTER_IP}" >&2
+  exit 5
+fi
+
+if ping -c 1 -W 3 {POC_WAN_GATEWAY} >/dev/null 2>&1; then
+  uci delete network.lan.gateway 2>/dev/null || true
+  uci commit network
+  /etc/init.d/network reload >/dev/null 2>&1 || true
+  echo "WAN_OK: $dev=$wan_ip gw={POC_WAN_GATEWAY} (default route now on the WAN leg)"
+else
+  echo "WAN_DEGRADED: $dev=$wan_ip cannot reach {POC_WAN_GATEWAY}; keeping the LAN gateway"
+fi
+
+ip -4 -o addr show br-lan | awk '{{print "LAN: " $4}}'
+ip route show default
+'''
+
+
+def provision_wan(args: argparse.Namespace) -> int:
+    """Converge the guest's WAN leg (second NIC). Idempotent."""
+    host = cast(str, args.host)
+    rc = _print_result(_router_ssh(host, _wan_config_script(), timeout=120))
+    return rc
+
+
 def _poc_disk_path(workdir: str) -> str:
     return os.path.join(workdir, "overlays", "tollgate-poc.qcow2")
+
+
+
 
 
 def _vm_running() -> bool:
@@ -1750,21 +2144,21 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor_parser = subparsers.add_parser("doctor", help="Check host readiness")
-    _ = doctor_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = doctor_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     doctor_parser.set_defaults(func=doctor)
 
     deps_parser = subparsers.add_parser("install-deps", help="Install host dependencies via apt")
-    _ = deps_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = deps_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     deps_parser.set_defaults(func=install_deps)
 
     image_parser = subparsers.add_parser("prepare-image", help="Download and prepare OpenWrt x86 images")
-    _ = image_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = image_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = image_parser.add_argument("--openwrt-version", default=DEFAULT_OPENWRT_VERSION)
     _ = image_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     image_parser.set_defaults(func=prepare_image)
 
     start_parser = subparsers.add_parser("start-poc", help="Start OpenWrt VM and Debian client VM")
-    _ = start_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = start_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = start_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = start_parser.add_argument("--fresh", action="store_true",
                                   help="Purge the DUT overlay before boot so the OpenWrt VM starts "
@@ -1780,25 +2174,25 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser.set_defaults(func=start_poc)
 
     stop_parser = subparsers.add_parser("stop-poc", help="Stop the POC VMs and clean up")
-    _ = stop_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = stop_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = stop_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = stop_parser.add_argument("--net-id", type=int, default=None, help="Must match the net-id the lab was started with")
     stop_parser.set_defaults(func=stop_poc)
 
     status_parser = subparsers.add_parser("status-poc", help="Show POC VM status")
-    _ = status_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = status_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = status_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = status_parser.add_argument("--net-id", type=int, default=None, help="Must match the net-id the lab was started with")
     status_parser.set_defaults(func=status_poc)
 
     smoke_parser = subparsers.add_parser("smoke-poc", help="Verify Debian client VM reaches OpenWrt gateway")
-    _ = smoke_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = smoke_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = smoke_parser.add_argument("--timeout", type=int, default=120)
     _ = smoke_parser.add_argument("--net-id", type=int, default=None, help="Must match the net-id the lab was started with")
     smoke_parser.set_defaults(func=smoke_poc)
 
     debug_parser = subparsers.add_parser("debug-poc", help="Comprehensive mid-flight debug of the virtual lab")
-    _ = debug_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = debug_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = debug_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = debug_parser.add_argument("--net-id", type=int, default=None, help="Must match the net-id the lab was started with")
     debug_parser.set_defaults(func=debug_poc)
@@ -1807,7 +2201,7 @@ def build_parser() -> argparse.ArgumentParser:
         "run-reseller-scenarios",
         help="Run virtualizable reseller-mode scenario tests against the virtual lab",
     )
-    _ = reseller_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = reseller_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = reseller_parser.add_argument("--results-dir", default="results/virtual-reseller-scenarios")
     _ = reseller_parser.add_argument("--backend", default="go", choices=list(BACKEND_CHOICES_CLI))
     _ = reseller_parser.add_argument("--secondary-router-host", default=None)
@@ -1815,7 +2209,7 @@ def build_parser() -> argparse.ArgumentParser:
     reseller_parser.set_defaults(func=run_reseller_scenarios)
 
     prepare_debian_parser = subparsers.add_parser("prepare-debian", help="Download Debian nocloud image and create overlay")
-    _ = prepare_debian_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = prepare_debian_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = prepare_debian_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     prepare_debian_parser.set_defaults(func=prepare_debian)
 
@@ -1830,36 +2224,68 @@ def build_parser() -> argparse.ArgumentParser:
     _ = pkg_parser.set_defaults(func=install_package)
 
     provision_debian_parser = subparsers.add_parser("provision-debian", help="Install Chromium + Playwright in Debian client VM")
-    _ = provision_debian_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = provision_debian_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = provision_debian_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     provision_debian_parser.set_defaults(func=provision_debian)
 
     poc_parser = subparsers.add_parser("poc", help="Prepare image, start VMs, and run smoke proof")
-    _ = poc_parser.add_argument("--host", default="218", help="SSH host for the Ubuntu lab machine")
+    _ = poc_parser.add_argument("--host", default=DEFAULT_HOST, help="SSH host for the Ubuntu lab machine")
     _ = poc_parser.add_argument("--openwrt-version", default=DEFAULT_OPENWRT_VERSION)
     _ = poc_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
     _ = poc_parser.add_argument("--timeout", type=int, default=120)
     poc_parser.set_defaults(func=run_poc)
 
+    install_parser = subparsers.add_parser(
+        "install-tollgate",
+        help="Install the tollgate-wrt artifact (+deps) into the running router VM",
+    )
+    _ = install_parser.add_argument("--host", default=DEFAULT_HOST)
+    _ = install_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
+    _ = install_parser.add_argument(
+        "--artifact", default=None,
+        help="Path to a tollgate-wrt x86_64 .apk (default: newest in <workdir>/artifacts)",
+    )
+    _ = install_parser.add_argument(
+        "--offline", action="store_true",
+        help="Do not touch the package feed; install only the staged artifact",
+    )
+    install_parser.set_defaults(func=install_tollgate)
+
+    verify_parser = subparsers.add_parser(
+        "verify-lab",
+        help="Prove the lab is a working TollGate lab (:2121 answers kind:10021, idle)",
+    )
+    _ = verify_parser.add_argument("--host", default=DEFAULT_HOST)
+    _ = verify_parser.add_argument("--timeout", type=int, default=120)
+    verify_parser.set_defaults(func=verify_lab)
+
+    wan_parser = subparsers.add_parser(
+        "provision-wan",
+        help="Converge the router VM's WAN leg on its second NIC (idempotent)",
+    )
+    _ = wan_parser.add_argument("--host", default=DEFAULT_HOST)
+    _ = wan_parser.add_argument("--workdir", default=DEFAULT_WORKDIR)
+    wan_parser.set_defaults(func=provision_wan)
+
     snap_parser = subparsers.add_parser("snapshot", help="QEMU snapshot management for the POC VM")
     snap_sub = snap_parser.add_subparsers(dest="snapshot_command", required=True)
     snap_create = snap_sub.add_parser("create", help="Create a snapshot (VM must be stopped)")
     _ = snap_create.add_argument("name", help="Snapshot name")
-    _ = snap_create.add_argument("--host", default="218")
+    _ = snap_create.add_argument("--host", default=DEFAULT_HOST)
     _ = snap_create.add_argument("--workdir", default=DEFAULT_WORKDIR)
     snap_create.set_defaults(func=snapshot_create)
     snap_list = snap_sub.add_parser("list", help="List snapshots")
-    _ = snap_list.add_argument("--host", default="218")
+    _ = snap_list.add_argument("--host", default=DEFAULT_HOST)
     _ = snap_list.add_argument("--workdir", default=DEFAULT_WORKDIR)
     snap_list.set_defaults(func=snapshot_list)
     snap_restore = snap_sub.add_parser("restore", help="Restore VM to snapshot (VM must be stopped)")
     _ = snap_restore.add_argument("name", help="Snapshot name")
-    _ = snap_restore.add_argument("--host", default="218")
+    _ = snap_restore.add_argument("--host", default=DEFAULT_HOST)
     _ = snap_restore.add_argument("--workdir", default=DEFAULT_WORKDIR)
     snap_restore.set_defaults(func=snapshot_restore)
     snap_delete = snap_sub.add_parser("delete", help="Delete a snapshot")
     _ = snap_delete.add_argument("name", help="Snapshot name")
-    _ = snap_delete.add_argument("--host", default="218")
+    _ = snap_delete.add_argument("--host", default=DEFAULT_HOST)
     _ = snap_delete.add_argument("--workdir", default=DEFAULT_WORKDIR)
     snap_delete.set_defaults(func=snapshot_delete)
 
