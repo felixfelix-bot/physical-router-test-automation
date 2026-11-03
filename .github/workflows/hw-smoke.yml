@@ -26,6 +26,12 @@
 #                     merchant session is live. This is the lane an agent runs
 #                     for an "is the box still healthy" check; locally the same
 #                     script is `make hw-readonly`.
+#   smoke             ZERO-SECRET admin-UI walkthrough (PRTA-REVIVE first
+#                     test). Runs under the machine-global bench lease
+#                     (scripts/hw-bench-lease) with the idle gate armed, so it
+#                     cannot collide with any other agent window — GitHub or
+#                     local — and refuses to start while a paying session is
+#                     live. No repo secrets, no bench-mutating flags.
 #   mutating-e2e      Requires the `bench-hardware` environment approval. The
 #                     paid-traffic specs (WiFi client / data allotment) are OFF
 #                     by default and must be opted into per dispatch — the old
@@ -48,10 +54,11 @@ on:
   workflow_dispatch:
     inputs:
       lane:
-        description: 'readonly = surface check only. mutating = bench E2E (needs bench-hardware approval).'
+        description: 'readonly = surface check only. smoke = zero-secret admin-UI walkthrough (bench lease). mutating = bench E2E (needs bench-hardware approval).'
         type: choice
         options:
           - readonly
+          - smoke
           - mutating
         default: readonly
       target_host:
@@ -119,6 +126,62 @@ jobs:
           path: hw-smoke-out/
           retention-days: 7
 
+  # -----------------------------------------------------------------------
+  # Lane 1.5 — SMOKE. Zero-secret admin-UI walkthrough under the bench lease.
+  # PRTA-REVIVE: the minimal dispatch-only hardware lane. Concurrency safety
+  # comes from the machine-global bench lease (scripts/hw-bench-lease, the
+  # same flock every local agent window takes) plus this workflow's hw-bench
+  # concurrency group; the idle gate refuses to start the walkthrough while a
+  # paying session is live (lib.session_verify.check_balance_api wiring).
+  # No repo secret reference and no bench-mutating env flag appear here on
+  # purpose, so the guard's R4/R5 do not (and must not) require the
+  # bench-hardware environment — dispatch itself is write-access-gated on
+  # the fork.
+  # -----------------------------------------------------------------------
+  hw-dispatch-smoke:
+    name: zero-secret admin-UI smoke (bench lease + idle gate)
+    needs: [readonly-surface]
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      && github.event.inputs.lane == 'smoke'
+    runs-on: [self-hosted, tollgate-router]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node deps (locked)
+        run: npm ci --no-audit --no-fund
+
+      - name: Browser channel
+        run: |
+          if ! command -v google-chrome >/dev/null 2>&1; then
+            npx playwright install chromium
+            echo "PLAYWRIGHT_CHANNEL=chromium" >> "$GITHUB_ENV"
+          fi
+
+      - name: Bench lease + idle gate + admin-UI walkthrough
+        env:
+          TOLLGATE_ROUTER_HOST: ${{ github.event.inputs.target_host || vars.HW_BENCH_HOST || '192.168.1.1' }}
+        run: |
+          python3 scripts/hw-bench-lease exec \
+            --purpose "hw-smoke-dispatch" \
+            --task "gha-${{ github.run_id }}" \
+            --check-idle \
+            --host "${TOLLGATE_ROUTER_HOST}" \
+            -- npx playwright test --config=tests/browser/admin-ui.config.mjs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hw-smoke-adminui
+          path: |
+            test-results/
+            report/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # ---------------------------------------------------------------------------
   # Lane 2 — MUTATING. Behind the bench-hardware environment (required
   # reviewers). Paid-traffic specs stay off unless opted in per dispatch.
@@ -137,11 +200,6 @@ jobs:
       TOLLGATE_SSH_HOST: ${{ secrets.TOLLGATE_SSH_HOST }}
       TOLLGATE_SSH_PASSWORD: ${{ secrets.TOLLGATE_SSH_PASSWORD }}
       TOLLGATE_WIFI_INTERFACE: ${{ secrets.TOLLGATE_WIFI_INTERFACE }}
-      # Paid-traffic / state-mutating specs: opt-in per dispatch, OFF by
-      # default. The lane cannot corrupt the bench for the next agent by
-      # accident any more.
-      TOLLGATE_ENABLE_WIFI_CLIENT_TESTS: ${{ github.event.inputs.enable_wifi_client_tests || 'false' }}
-      TOLLGATE_ENABLE_DATA_ALLOTMENT_TESTS: ${{ github.event.inputs.enable_data_allotment_tests || 'false' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -163,7 +221,16 @@ jobs:
       # Non-destructive projects only. The destructive project (firmware flash,
       # reboot) has its own job below — the old `test-physical` job ran the
       # whole config, destructive project included.
+      #
+      # The paid-traffic opt-in lives HERE, on the spec step, and not in the
+      # job-level env: `scripts/hw-readonly-check.sh` G0 refuses to run at all
+      # when it sees a mutating flag, so a job-level flag would abort the
+      # pre-flight of the very lane that opted in (the opt-in path would be
+      # dead on arrival).
       - name: Bench E2E (non-destructive projects)
+        env:
+          TOLLGATE_ENABLE_WIFI_CLIENT_TESTS: ${{ github.event.inputs.enable_wifi_client_tests || 'false' }}
+          TOLLGATE_ENABLE_DATA_ALLOTMENT_TESTS: ${{ github.event.inputs.enable_data_allotment_tests || 'false' }}
         run: |
           npx playwright test --config=tests/playwright.config.mjs \
             --project=desktop-luci \
@@ -200,6 +267,9 @@ jobs:
       TOLLGATE_LUCI_PASSWORD: ${{ secrets.TOLLGATE_LUCI_PASSWORD }}
       TOLLGATE_SSH_HOST: ${{ secrets.TOLLGATE_SSH_HOST }}
       TOLLGATE_SSH_PASSWORD: ${{ secrets.TOLLGATE_SSH_PASSWORD }}
+      # Parity with the mutating lane: the flash/reboot specs read the WiFi
+      # interface name like every other bench project.
+      TOLLGATE_WIFI_INTERFACE: ${{ secrets.TOLLGATE_WIFI_INTERFACE }}
     steps:
       - uses: actions/checkout@v4
         with:

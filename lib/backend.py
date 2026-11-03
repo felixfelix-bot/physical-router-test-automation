@@ -3,8 +3,8 @@ import logging
 
 log = logging.getLogger("tollgate.backend")
 
-BACKEND_TYPES = ("go", "go-cdk", "rust", "rust-basic", "rust-embedded")
-BACKEND_CHOICES_CLI = ("go", "rust", "rust-basic", "rust-embedded")
+BACKEND_TYPES = ("go", "go-cdk", "rust", "rust-basic", "rust-embedded", "rust-v2")
+BACKEND_CHOICES_CLI = ("go", "rust", "rust-basic", "rust-embedded", "rust-v2")
 
 
 class BackendConfig:
@@ -17,7 +17,12 @@ class BackendConfig:
 
     @property
     def is_rust(self) -> bool:
-        return self.type == "rust"
+        # Family-wide: a test asking is_rust means "the SUT is a Rust binary
+        # with Rust-shaped behaviors" — under rust-basic the narrow check
+        # never fired and Go-calibrated assertions ran anyway (the
+        # M1-documented guard miss, resurfaced in the 2026-10-28 gates).
+        # Tests that need the tollgate-rs backend specifically use == "rust".
+        return self.type in ("rust", "rust-basic", "rust-embedded")
 
     @property
     def is_rust_family(self) -> bool:
@@ -40,6 +45,13 @@ class BackendConfig:
         return self.type == "rust-embedded"
 
     @property
+    def is_rust_v2(self) -> bool:
+        """The current OpenTollGate/tollgate-rs node: native TollGate protocol
+        (tollgated + mintd + merchantd), no HTTP captive API. Asserted through
+        the control-socket snapshot instead of :2121."""
+        return self.type == "rust-v2"
+
+    @property
     def build_tags(self) -> str:
         return "cdk_wallet" if self.is_go_cdk else ""
 
@@ -49,6 +61,8 @@ class BackendConfig:
 
     @property
     def repo(self) -> str:
+        if self.is_rust_v2:
+            return "OpenTollGate/tollgate-rs"
         if self.is_rust:
             return "Amperstrand/tollgate-rs-ai-research-and-experiments"
         if self.is_rust_basic or self.is_rust_embedded:
@@ -57,12 +71,14 @@ class BackendConfig:
 
     @property
     def workflow(self) -> str:
-        if self.is_rust or self.is_rust_basic or self.is_rust_embedded:
+        if self.is_rust or self.is_rust_basic or self.is_rust_embedded or self.is_rust_v2:
             return "Build and Package"
         return "Build and Publish"
 
     @property
     def config_path(self) -> str:
+        if self.is_rust_v2:
+            return "/etc/tollgate/tollgate.yaml"
         return "/etc/tollgate/config.json"
 
     @property

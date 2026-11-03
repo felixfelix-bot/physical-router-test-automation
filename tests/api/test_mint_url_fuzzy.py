@@ -19,7 +19,7 @@ import requests
 from lib.constants import BACKEND_PORT
 from lib.helpers import is_session_event, is_mac_lookup_failure, require_client_identity
 
-pytestmark = [pytest.mark.api, pytest.mark.extended]
+pytestmark = [pytest.mark.story("R2"),pytest.mark.api, pytest.mark.extended]
 
 
 def _get_config_mint_url(router):
@@ -31,7 +31,7 @@ def _get_config_mint_url(router):
 def _set_and_wait(router, new_url, timeout=90):
     router.ssh(
         f"jq '.accepted_mints[0].url = \"{new_url}\"' /etc/tollgate/config.json"
-        f" > /tmp/cfg.json && mv /tmp/cfg.json /etc/tollgate/config.json",
+        f" > /etc/tollgate/.cfg.tmp && mv /etc/tollgate/.cfg.tmp /etc/tollgate/config.json",
         timeout=10,
     )
     router.restart_backend(timeout=45)

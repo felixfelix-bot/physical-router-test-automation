@@ -6,13 +6,15 @@ import time
 import pytest
 
 log = logging.getLogger("tollgate.api.access_denominated")
-pytestmark = [pytest.mark.api, pytest.mark.config, pytest.mark.slow]
+pytestmark = [
+    pytest.mark.story("M1"),
+    pytest.mark.tip("TIP-02"),pytest.mark.api, pytest.mark.config, pytest.mark.slow]
 
 SUCCESS_KINDS = (10021, 21000, 1022)
 
 
 def _set_price_per_step(router, value):
-    router.ssh(f"jq '.accepted_mints[0].price_per_step = {value}' /etc/tollgate/config.json > /tmp/cfg.tmp && mv /tmp/cfg.tmp /etc/tollgate/config.json")
+    router.ssh(f"jq '.accepted_mints[0].price_per_step = {value}' /etc/tollgate/config.json > /etc/tollgate/.cfg.tmp && mv /etc/tollgate/.cfg.tmp /etc/tollgate/config.json")
     router.restart_backend()
     time.sleep(10)
 

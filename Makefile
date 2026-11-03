@@ -50,16 +50,23 @@ YELLOW := \033[33m
 CYAN   := \033[36m
 RESET  := \033[0m
 
-HARDWARE_LOCK := hardware.lock
+# ONE machine-global bench lease (PRTA-REVIVE). scripts/hw-bench-lease wraps
+# lib/bench_lock.BenchLock: flock authority on ~/.hermes/state/bench-mt3000.lock
+# + a holder line, interop with scripts/mt3000-bench/bench-lock.sh, and an
+# optional idle gate wired to lib/session_verify.check_balance_api. This
+# retires the three inconsistent legacy guards: the repo-local `hardware.lock`
+# presence check that used to live here, lib/hardware_lock.py's /tmp JSON and
+# lib/router_lock.py's routers.lock (both now delegate — see those modules).
+BENCH_LEASE := $(CURDIR)/scripts/hw-bench-lease
 
 include make/migration.mk
 
 define require_hardware_lock
-	@if [ ! -f "$(HARDWARE_LOCK)" ]; then \
-		echo "$(RED)$(BOLD)Hardware not locked — run 'make lock PHASE=\"description\"' first$(RESET)"; \
-		echo "$(YELLOW)Other LLM sessions may be using the hardware (ESP32 boards + routers).$(RESET)"; \
+	@python3 $(BENCH_LEASE) require || { \
+		echo "$(YELLOW)Other agent sessions may be using the hardware (ESP32 boards + routers).$(RESET)"; \
+		echo "$(YELLOW)The lease is machine-global: 'make lock PHASE=\"description\"' takes it.$(RESET)"; \
 		exit 1; \
-	fi
+	}
 endef
 
 # ===========================================================================
@@ -119,10 +126,10 @@ help: ## Show this help
 	@echo "  make serial-recovery      ROUTER=alpha CMD='wifi reload'  # emergency command"
 	@echo ""
 	@echo "$(CYAN)--- Hardware mutex (ESP32 + routers) ---$(RESET)"
-	@echo "  make lock                 PHASE='testing foo'   # acquire lock"
-	@echo "  make unlock                                      # release lock"
-	@echo "  make lock-status                                 # check lock"
-	@echo "  make force-unlock                                # force-release"
+	@echo "  make lock                 PHASE='testing foo'   # take bench lease (blocks)"
+	@echo "  make unlock                                      # release bench lease"
+	@echo "  make lock-status                                 # bench lease + ESP32 locks"
+	@echo "  make force-unlock                                # clear stale holder line"
 	@echo ""
 	@echo "$(CYAN)--- Variables ---$(RESET)"
 	@echo "  ROUTER  - router label from routers.env (default: alpha)"
@@ -246,7 +253,7 @@ test-cashu-payment: ## Run cashu e2e payment Playwright test [playwright]
 #  BENCH LANES — read-only vs mutating (see docs/hw-lane-isolation.md)
 # ===========================================================================
 
-.PHONY: check-workflows hw-readonly
+.PHONY: check-workflows hw-readonly hw-smoke-adminui
 
 check-workflows: ## Guard: no PR-reachable workflow can reach the bench (+ self-test)
 	@bash scripts/ci/check-workflow-hw-isolation.sh
@@ -257,6 +264,49 @@ hw-readonly: ## Read-only bench surface check: no creds, no mutation, no paid tr
 	@# runnable while another agent holds the bench and while a session is live.
 	@# Host via TOLLGATE_ROUTER_HOST (default 192.168.1.1).
 	@bash scripts/hw-readonly-check.sh
+
+hw-smoke-adminui: ## Zero-secret admin-UI walkthrough under the bench lease (local parity of the hw-smoke smoke lane)
+	@if [ ! -d node_modules ]; then echo "$(YELLOW)Run npm install first$(RESET)"; exit 1; fi
+	@python3 $(BENCH_LEASE) exec \
+		--purpose "hw-smoke-local" \
+		--check-idle \
+		-- npx playwright test --config=tests/browser/admin-ui.config.mjs
+
+# ===========================================================================
+#  DEMO RECORDING (docs/demo-recording.md)
+# ===========================================================================
+
+.PHONY: record-demo-clientd
+
+TOLLGATE_LAB_COMPOSE ?= ../tollgate-module-basic-go/tests/cloud-lab/docker-compose.yml
+
+record-demo-clientd: ## Record clientd auto-top-up demo vs cloud lab → evidence/ [demo]
+	@test -f "$(TOLLGATE_LAB_COMPOSE)" || { echo "cloud-lab compose not found: $(TOLLGATE_LAB_COMPOSE) — set TOLLGATE_LAB_COMPOSE"; exit 1; }
+	@mkdir -p /tmp/tollgate-demo-wallet
+	docker compose -f $(TOLLGATE_LAB_COMPOSE) run --rm --entrypoint cdk-cli \
+		-v /tmp/tollgate-demo-wallet:/w client -w /w mint http://mint:8085 100
+	docker compose -f $(TOLLGATE_LAB_COMPOSE) restart upstream
+	python3 scripts/record-demo.py \
+		--clientd-cmd "docker compose -f $(TOLLGATE_LAB_COMPOSE) run --rm --entrypoint python3 \
+			-v /tmp/tollgate-demo-wallet:/w -v $(CURDIR)/scripts:/prta:ro client \
+			/prta/tollgate-clientd.py --gateway upstream --mac 02:00:00:00:00:20 \
+			--wallet cdk-cli --wallet-dir /w --steps 1 --renew-below 45s --interval 1" \
+		--log-source docker:tg-upstream \
+		--duration 45 \
+		--out evidence/$(shell date +%F)-clientd-demo \
+		--title "PRTA laptop lane — clientd auto-top-up (cloud lab)" \
+		--export-video --export-speed 2
+
+.PHONY: test-laptop-clientd
+
+# tests/laptop/ — clientd from this host against a real TollGate router
+# (real ARP + NoDogSplash MAC registration). Requires provisioning, see
+# docs/tollgate-clientd.md "The laptop lane": LAPTOP_GATEWAY (router IP),
+# a funded cdk-cli wallet reachable in PATH, and SSH to the router.
+test-laptop-clientd: ## [hardware] clientd vs real router: ARP + NDS MAC lane (tests/laptop/)
+	$(call require_hardware_lock)
+	@test -n "$${LAPTOP_GATEWAY:-}" || { echo "$(RED)Set LAPTOP_GATEWAY (e.g. 10.99.99.1)$(RESET)"; exit 1; }
+	LAPTOP_GATEWAY="$${LAPTOP_GATEWAY}" $(PYTHON) -m pytest tests/laptop/ -v $(PYTEST_ARGS)
 
 # ===========================================================================
 #  FULL TEST SUITES
@@ -628,65 +678,58 @@ hybrid-restart-and-watch: ## Restart service via SSH, verify via serial if SSH d
 
 .PHONY: lock unlock lock-status force-unlock
 
-LOCK_DIR := locks
+lock: ## Acquire the machine-global bench lease — set PHASE='description'
+	@python3 $(BENCH_LEASE) hold --purpose "$(PHASE)"
 
-lock: ## Acquire router hardware lock — set PHASE='description'
-	@if [ -f "$(HARDWARE_LOCK)" ]; then \
-		owner=$$(grep '^session:' $(HARDWARE_LOCK) | head -1 | sed 's/session: *//' | cut -d@ -f1); \
-		if [ "$$owner" = "$$USER" ]; then \
-			echo "$(YELLOW)Hardware already locked by this session — refreshing lock$(RESET)"; \
-		else \
-			echo "$(RED)$(BOLD)Cannot acquire lock — hardware locked by another session:$(RESET)"; \
-			echo ""; \
-			cat $(HARDWARE_LOCK); \
-			echo ""; \
-			echo "$(YELLOW)Use 'make force-unlock' to override (with caution).$(RESET)"; \
-			exit 1; \
-		fi; \
-	fi; \
-	branch=$$(git branch --show-current 2>/dev/null || echo "unknown"); \
-	worktree=$$(pwd); \
-	echo "locked: true" > $(HARDWARE_LOCK); \
-	echo "branch: $$branch" >> $(HARDWARE_LOCK); \
-	echo "worktree: $$worktree" >> $(HARDWARE_LOCK); \
-	echo "session: $$USER@$$(hostname)" >> $(HARDWARE_LOCK); \
-	echo "timestamp: $$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $(HARDWARE_LOCK); \
-	echo "phase: $(PHASE)" >> $(HARDWARE_LOCK); \
-	echo "$(GREEN)$(BOLD)Router hardware lock acquired$(RESET)"; \
-	cat $(HARDWARE_LOCK)
+unlock: ## Release the bench lease (clears a stale holder line)
+	@python3 $(BENCH_LEASE) release
 
-unlock: ## Release router hardware lock
-	@if [ ! -f "$(HARDWARE_LOCK)" ]; then \
-		echo "$(YELLOW)No lock file found — already unlocked.$(RESET)"; \
-		exit 0; \
-	fi; \
-	echo "$(YELLOW)Releasing hardware lock...$(RESET)"; \
-	rm -f $(HARDWARE_LOCK); \
-	echo "$(GREEN)Hardware lock released.$(RESET)"
-
-lock-status: ## Show all lock statuses (routers + ESP32 boards)
-	@echo "$(BOLD)=== Router Lock ===$(RESET)"
-	@if [ ! -f "$(HARDWARE_LOCK)" ]; then \
-		echo "$(GREEN)Router hardware unlocked — available.$(RESET)"; \
-	else \
-		echo "$(YELLOW)$(BOLD)Router hardware locked:$(RESET)"; \
-		echo ""; \
-		cat $(HARDWARE_LOCK); \
-	fi
+lock-status: ## Show bench lease state + ESP32 board locks
+	@echo "$(BOLD)=== Bench Lease (machine-global) ===$(RESET)"
+	@python3 $(BENCH_LEASE) status
 	@echo ""
 	@echo "$(BOLD)=== ESP32 Board Locks ===$(RESET)"
 	@$(MAKE) -C esp32 lock-status
 
-force-unlock: ## Force-release router hardware lock (use with caution)
-	@if [ ! -f "$(HARDWARE_LOCK)" ]; then \
-		echo "$(YELLOW)No lock file found — already unlocked.$(RESET)"; \
-		exit 0; \
-	fi; \
-	echo "$(RED)$(BOLD)WARNING: Force-releasing router hardware lock!$(RESET)"; \
-	echo "$(RED)Previous holder:$(RESET)"; \
-	cat $(HARDWARE_LOCK); \
-	rm -f $(HARDWARE_LOCK); \
-	echo "$(GREEN)Hardware lock force-released.$(RESET)"
+.PHONY: quiesce quiesce-all fleet-keys check-protected bench-run bench-install \
+	openbao-approle mgmt-firewall
+
+quiesce: ## Disable APs on ROUTER after a run (bench lease required)
+	@python3 scripts/quiesce-router.py --router "$(ROUTER)"
+
+quiesce-all: ## Disable APs on every non-protected router (cleanup sweep)
+	@python3 scripts/quiesce-router.py --all --allow-unlocked
+
+fleet-keys: ## Install committed fleet SSH public keys on ROUTER
+	@python3 scripts/install-fleet-keys.py --router "$(ROUTER)"
+
+check-protected: ## Fail closed if ROUTER_IP is a production/control device
+	@test -n "$(ROUTER_IP)" || { echo "set ROUTER_IP=<address>" >&2; exit 2; }
+	@python3 scripts/check-protected.py --address "$(ROUTER_IP)"
+
+bench-run: ## Run CMD under the bench lease with the OpenBao bench key
+	@test -n "$(CMD)" || { echo "set CMD='<command>'" >&2; exit 2; }
+	@scripts/hw-bench-lease exec --purpose "$(or $(PHASE),make bench-run)" -- \
+		scripts/prta-bench-run.sh -- $(CMD)
+
+bench-install: ## Install x280 bench routes + quiesce watchdog (run on x280)
+	@sudo PRTA_ROOT="$(CURDIR)" ./deploy/x280/install-bench.sh
+comfast-apply: ## Reapply the COMFAST OpenWrt test-target config
+	@scripts/bench/comfast_apply.sh
+
+
+openbao-approle: ## Create the test-automation policy/AppRole (admin BAO_TOKEN)
+	@./scripts/openbao-approle-apply.sh --role-id-file "$(HOME)/.config/prta/role-id"
+
+mgmt-firewall: ## Apply the x280-only management rule on ROUTER
+	@test -n "$(ROUTER)" || { echo "set ROUTER=<id>" >&2; exit 2; }
+	@python3 scripts/bench/apply-mgmt-firewall.py --router "$(ROUTER)" \
+		$(if $(ZONE),--zone "$(ZONE)",) $(if $(SRC_IP),--src-ip "$(SRC_IP)",) \
+		$(if $(DENY_OTHERS),--deny-others,)
+
+force-unlock: ## Clear a stale bench lease holder line (cannot steal a live flock)
+	@echo "$(YELLOW)A live lease cannot be stolen: the flock drops when its holder exits.$(RESET)"
+	@python3 $(BENCH_LEASE) release
 
 # ===========================================================================
 #  HOSTNAME & SSL TESTS (legacy Makefile reference)
@@ -1066,15 +1109,7 @@ arch-test-full: ## Run all arch E2E tests (~4min)
 #  PYTEST / CI / REPORT TARGETS (from main branch)
 # ===========================================================================
 
-.PHONY: pytest-smoke pytest-critical pytest-extended pytest-api pytest-phone \
-        pytest-test pytest-scenarios pytest-hardware-smoke pymake-help \
-        pytest-smoke-mac pytest-critical-mac pytest-api-mac pytest-test-mac \
-        pytest-smoke-linux pytest-api-linux pytest-test-linux \
-        pytest-smoke-rust pytest-api-rust pytest-test-rust pytest-critical-rust \
-        pytest-smoke-rust-basic pytest-api-rust-basic \
-        luci deploy-ci deploy-ci-rust setup-python \
-        run-api run-api-quick run-phone run-captive-portal run-luci run-all run-profile \
-        collect render-report sanitize publish pr-smoke clean
+.PHONY: pytest-smoke pytest-critical pytest-extended pytest-api pytest-phone pytest-test pytest-scenarios pytest-hardware-smoke pymake-help install-path-preflight install-path-dry-run install-path-e2e fresh-flash-check bench-lock-status cudy-flash-check cudy-flash-capacity cudy-flash-dump-page cudy-flash-oem-upload cudy-flash-sysupgrade cudy-flash-install-tollgate cudy-flash-verify cudy-flash-tests pytest-smoke-mac pytest-critical-mac pytest-api-mac pytest-test-mac pytest-smoke-linux pytest-api-linux pytest-test-linux pytest-smoke-rust pytest-api-rust pytest-test-rust pytest-critical-rust pytest-smoke-rust-basic pytest-api-rust-basic luci deploy-ci deploy-ci-rust setup-python run-api run-api-quick run-phone run-captive-portal run-luci run-all run-profile collect render-report sanitize publish pr-smoke clean
 
 # --- Pytest test tiers (raw pytest, no canonical run dir) ---
 
@@ -1099,6 +1134,144 @@ pytest-test:
 pytest-scenarios: ## Hardware scenario tests (requires lock + routers.env)
 	$(call require_hardware_lock)
 	@TOLLGATE_USE_HARDWARE_LOCK=1 pytest tests/scenarios/ -m hardware -v --tb=short
+
+# --- Dual-install-path e2e (fresh flash -> direct package / installer -> happy path) ---
+#
+# The bench MT3000 is a SINGLE-OWNER resource: every router-touching step runs
+# under the sanctioned bench lock (`bench-with-lock` / `bench-deploy-apk`, see
+# the tollgate-development skill reference `bench-router-single-owner`).  When
+# that helper is not installed the lock is taken in-process by lib/bench_lock.py
+# on the same flock + the same holder-line format.
+
+install-path-preflight: ## Flash-free, network-free: does this release support the POLICY/guard assertion? [exit 3 = unsupported]
+	@PYTHONPATH=. python3 -c "import os; from lib import install_paths as ip; r = ip.policy_preflight(os.environ.get('TOLLGATE_FEED_TAG') or ip.FEED_RELEASE_DEFAULT); print(r.message()); raise SystemExit(0 if r.supported else 3)"
+
+install-path-dry-run: ## Flash-free dual-install-path checks: pre-flight, artifact fetch+hash, same-format payload identity, installer shape, image verify, lock state
+	@if command -v bench-with-lock >/dev/null 2>&1; then \
+		bench-with-lock --purpose "install-path dry run" --task $${TOLLGATE_BENCH_TASK_ID:-t_a05094ad} -- \
+			env PYTHONPATH=. TOLLGATE_APK_TOOL=$${TOLLGATE_APK_TOOL:-$$HOME/.cache/apk-v3/apk.static} \
+			python3 scripts/install-path-e2e.py --dry-run --host $(TOLLGATE_SSH_HOST) \
+			--md-out docs/install-paths-dry-run-report.md; \
+	else \
+		echo "note: bench-with-lock not installed — using the in-process lock (lib/bench_lock.py)"; \
+		env PYTHONPATH=. TOLLGATE_APK_TOOL=$${TOLLGATE_APK_TOOL:-$$HOME/.cache/apk-v3/apk.static} \
+			python3 scripts/install-path-e2e.py --dry-run --host $(TOLLGATE_SSH_HOST) \
+			--md-out docs/install-paths-dry-run-report.md; \
+	fi
+
+install-path-e2e: ## LOCKED bench phase: wallet gate + bench lock + fresh flash + both install paths + happy path (needs TOLLGATE_LN_ADDRESS + TOLLGATE_ENABLE_SYSUPGRADE_FLASHING=true)
+	$(call require_hardware_lock)
+	@PYTHONPATH=. python3 scripts/install-path-e2e.py --flash-and-run --host $(TOLLGATE_SSH_HOST)
+
+fresh-flash-check: ## Read-only fresh-flash preconditions (image hash, wallet drain gate, lock state)
+	@PYTHONPATH=. python3 scripts/fresh-flash.py --check
+
+bench-lock-status: ## Show who holds the shared bench lock (~/.hermes/state/bench-mt3000.lock)
+	@python3 -m lib.bench_lock status
+
+# --- Cudy WR3000 v1 flash lane (procedure: docs/cudy-wr3000-flashing.md) ---
+#
+# Two stages, no case opening: Cudy's signed transitional image through the vendor
+# web UI, then a mainline sysupgrade, then the handover into the EXISTING install
+# path (install-path-e2e below).  Every mutating target needs BOTH
+# TOLLGATE_ENABLE_SYSUPGRADE_FLASHING=true AND --yes-i-mean-it (pass it in CUDY_ARGS).
+#
+# EVIDENCE (2026-09-27): stages 1 and 2 were verified on a real Cudy WR3000 v1; the
+# vendor upload endpoint/file-field are PINNED from that run.  The capacity preflight
+# and the volatile install are implemented + unit-tested but NOT hardware-verified.
+#
+# Lock policy (explicit): the Cudy is a SEPARATE physical box from the MT3000 bench,
+# so these targets do NOT take the shared bench flock.  Set
+# TOLLGATE_CUDY_TAKE_BENCH_LOCK=true to serialise on the Cudy's own lock.
+
+CUDY_ARGS ?=
+
+cudy-flash-check: ## Read-only Cudy preconditions: image hashes, model guard, page class, staged commands
+	@PYTHONPATH=. python3 scripts/cudy-flash.py check $(CUDY_ARGS)
+
+cudy-flash-capacity: ## Read-only flash-capacity preflight (the 16 MB device vs the 21 MB payload)
+	@PYTHONPATH=. python3 scripts/cudy-flash.py capacity $(CUDY_ARGS)
+
+cudy-flash-dump-page: ## STAGE 1 evidence-first: log the real vendor firmware page + selectors (uploads NOTHING)
+	@PYTHONPATH=. python3 scripts/cudy-flash.py oem-upload --dump-page $(CUDY_ARGS)
+
+cudy-flash-oem-upload: ## STAGE 1 (destructive): vendor-UI upload of the Cudy-signed transitional image (switch + --yes-i-mean-it)
+	@PYTHONPATH=. python3 scripts/cudy-flash.py oem-upload $(CUDY_ARGS)
+
+cudy-flash-sysupgrade: ## STAGE 2 (destructive): mainline sysupgrade -n over ssh stdin (switch + --yes-i-mean-it)
+	@PYTHONPATH=. python3 scripts/cudy-flash.py sysupgrade $(CUDY_ARGS)
+
+cudy-flash-install-tollgate: ## STAGE 3: set the root password, enable Wi-Fi, then hand over to the existing install path
+	@PYTHONPATH=. python3 scripts/cudy-flash.py install-tollgate $(CUDY_ARGS)
+#  add --volatile (and --package <local .apk>) for the tmpfs install: the 16 MB flash
+#  cannot hold the 21 MB payload, so the big binaries live in /tmp and IS LOST ON REBOOT
+
+cudy-flash-verify: ## Read-only post-install ladder (board, Wi-Fi ifaces, module kind:10021)
+	@PYTHONPATH=. python3 scripts/cudy-flash.py verify $(CUDY_ARGS)
+
+cudy-flash-tests: ## Offline unit tests for the Cudy lane (no router, no network)
+	@python3 -m pytest tests/unit/test_cudy_flash.py -q
+
+# --- Second-purchase bench lanes (procedure + measured result: docs/second-purchase-bench.md)
+#
+# Every router-touching step rides the sanctioned single-owner bench lock; the e2e takes it
+# itself (re-exec under `bench-lock.sh exec`) unless it is already inside a window.
+# NOTHING HERE SPENDS ANYTHING unless you pass ARGS=--purchase (the e2e) or ARGS=--yes (mint).
+
+SECOND_PURCHASE_ARGS ?=
+BENCH_TOKEN_AMOUNT   ?= 64
+BENCH_TOKEN_ARGS     ?=
+TOKEN_FILE           ?=
+
+.PHONY: second-purchase-e2e second-purchase-detached bench-snapshot bench-snapshot-payload \
+        bench-token-mint bench-token-verify bench-tests device-identity-tests \
+        device-identity-claim device-identity-verify
+
+second-purchase-e2e: ## Second purchase on the bench: DRY RUN default (ARGS=--purchase TOKEN_1=.. TOKEN_2=.. spends)
+	@bash scripts/mt3000-bench/second-purchase-e2e.sh $(SECOND_PURCHASE_ARGS)
+
+second-purchase-detached: ## Launch the long second-purchase run detached (systemd-run --user), then poll the journal
+	@systemd-run --user --collect --unit=tg-second-purchase-$$(date +%s) \
+		bash scripts/mt3000-bench/second-purchase-e2e.sh $(SECOND_PURCHASE_ARGS)
+
+bench-snapshot: ## Router-side snapshot: ndsctl, nft guard counters, /balance, module log (needs the bench window)
+	@bash scripts/mt3000-bench/router-snapshot.sh snapshot --label "make bench-snapshot"
+
+bench-snapshot-payload: ## Print the on-router snapshot payload locally (no ssh, no lock) — review what runs on the box
+	@bash scripts/mt3000-bench/router-snapshot.sh render
+
+bench-token-mint: ## Mint one token for the bench (DRY RUN; ARGS=--yes to actually mint)
+	@scripts/mt3000-bench/bench-token.py mint --amount $(BENCH_TOKEN_AMOUNT) $(BENCH_TOKEN_ARGS)
+
+bench-token-verify: ## NUT-07: TOKEN_FILE must read back fully UNSPENT before it is spent (exit 1 if not)
+	@test -n "$(TOKEN_FILE)" || { echo "set TOKEN_FILE=<path to a cashu token file>"; exit 1; }
+	@scripts/mt3000-bench/bench-token.py verify --token-file $(TOKEN_FILE) $(BENCH_TOKEN_ARGS)
+
+bench-tests: ## Offline negative-control suite: the bench lock (hermetic: never the production lock), the e2e lanes, the snapshot payload, and the live-run guard controls (no router)
+	@bash tests/mt3000-bench/run-tests.sh
+
+# --- The bench DEVICE PIN (docs/bench-device-identity.md)
+#
+# Two routers can answer on ONE address (2026-09-28: GL-MT3000 on enp0s31f6 + Cudy WR3000 on a
+# USB dongle, both at 192.168.1.1) and a flash/install then lands on the wrong box. Pin the box
+# once, then call the preflight before ANY destructive step:
+#
+#   scripts/bench/device-identity.sh verify --name bench-mt3000 || exit $?
+#
+# bench-deploy-apk.sh runs it itself when BENCH_BOX (or BENCH_DEVICE_IDENTITY) is set.
+DEVICE_BOX ?= bench-mt3000
+DEVICE_IFACE ?=
+DEVICE_SRC ?=
+
+device-identity-claim: ## Pin a box, e.g. make device-identity-claim DEVICE_BOX=bench-mt3000 DEVICE_IFACE=enp0s31f6 DEVICE_SRC=192.168.1.200
+	@test -n "$(DEVICE_IFACE)" || { echo "set DEVICE_IFACE=<host interface> (and DEVICE_SRC=<host address on it>)"; exit 2; }
+	@scripts/bench/device-identity.sh claim --name $(DEVICE_BOX) --iface $(DEVICE_IFACE) $(if $(DEVICE_SRC),--src $(DEVICE_SRC),)
+
+device-identity-verify: ## Fail-closed preflight: is the box on this address the box we claimed?
+	@scripts/bench/device-identity.sh verify --name $(DEVICE_BOX)
+
+device-identity-tests: ## Offline suite for the device pin: 28 tests, no router, PATH doubles + non-vacuity and mutation controls
+	@bash tests/bench-device-identity/run-tests.sh
 
 pytest-hardware-smoke: ## Migrated smoke-* scenario subset
 	$(call require_hardware_lock)
@@ -1234,6 +1407,22 @@ verify-feed-rc: ## [hardware] Verify the FreedomTechFeed RC installs+works (.ipk
 	FEED_EXPECT_COMMIT="$(FEED_EXPECT_COMMIT)" \
 	$(PYTHON) -m pytest tests/scenarios/test_feed_package.py -v -s $(PYTEST_ARGS)
 
+# --- MPTCP multi-WAN bonding (physical router; serial console) ---
+
+mptcp-bonding-test: ## MPTCP multi-WAN checks on the router (needs TOLLGATE_SERIAL_PORT) [pytest]
+	$(call require_hardware_lock)
+	@test -n "$${TOLLGATE_SERIAL_PORT:-}" || { echo "$(RED)Set TOLLGATE_SERIAL_PORT (e.g. /dev/ttyUSB1)$(RESET)"; exit 1; }
+	@echo "$(BOLD)=== mptcp-bonding-test: endpoints, limits, tunnels, subflow ===$(RESET)"
+	TOLLGATE_USE_HARDWARE_LOCK=1 $(PYTHON) -m pytest tests/mptcp -v -s $(PYTEST_ARGS)
+
+mptcp-bonding-measure: ## MPTCP subflow measurement (spends traffic; needs PEER + TUNNEL_ADDRS)
+	$(call require_hardware_lock)
+	@test -n "$${TOLLGATE_MPTCP_PEER:-}" || { echo "$(RED)Set TOLLGATE_MPTCP_PEER$(RESET)"; exit 1; }
+	@test -n "$${TOLLGATE_MPTCP_TUNNEL_ADDRS:-}" || { echo "$(RED)Set TOLLGATE_MPTCP_TUNNEL_ADDRS$(RESET)"; exit 1; }
+	TOLLGATE_USE_HARDWARE_LOCK=1 TOLLGATE_MPTCP_MEASURE=1 \
+		$(PYTHON) -m pytest tests/mptcp -v -s $(PYTEST_ARGS)
+
+
 # --- Setup (Python venv) ---
 
 setup-python:
@@ -1280,9 +1469,98 @@ record-portal: ## Record portal demo videos WITH cursor highlight (desktop+mobil
 	@if [ ! -d node_modules ]; then echo "$(YELLOW)Run npm install first$(RESET)"; exit 1; fi
 	@node scripts/record-portal-highlight.mjs
 
+# --- Pre-auth probes ---
+
+.PHONY: probe-ports
+probe-ports: ## Pre-auth port/UI sweep from a captive-LAN client (no SSH, no creds)
+	@bash scripts/tollgate-port-sweep.sh $(if $(HOST),--host $(HOST),)
+
 # --- Clean ---
 
 clean:
 	rm -rf $(RESULTS_DIR)/*
 	rm -f report.html
 	rm -rf .pytest_cache __pycache__
+
+# ─── User-story tests (device-agnostic, labgrid-integrated) ─────────────
+
+.PHONY: pytest-stories pytest-story-pay pytest-story-expiry pytest-story-degraded
+
+pytest-stories:
+	pytest tests/stories/ --no-deploy --timeout-method=signal -v
+
+pytest-story-pay:
+	pytest tests/stories/test_user_pays_and_gets_internet.py --no-deploy --timeout-method=signal -v
+
+pytest-story-expiry:
+	pytest tests/stories/test_session_expiry_and_repayment.py --no-deploy --timeout-method=signal -v
+
+pytest-story-degraded:
+	pytest tests/stories/test_degraded_mode.py --no-deploy --timeout-method=signal -v
+
+# Story/TIP coverage: regenerate the machine-generated mapping
+# (docs/user-stories.generated.md) from the pytest.mark.story/tip marks.
+# Selection: pytest --story <ID> | pytest --tip <TIP-xx> (both combine).
+story-report:
+	python3 scripts/story-coverage.py
+	@echo "--- summary ---"
+	@head -n 12 docs/user-stories.generated.md
+
+extensive-test: ## One-command extensive-test sweep (see docs/extensive-test.md)
+	@bash scripts/extensive-test.sh
+
+# --- Film narration (attach a narrated video to any test lane) ---
+
+.PHONY: film-narrate film-publish
+film-narrate: ## Narrate a recording: make film-narrate VIDEO=clip.mp4 TIMELINE=narration.json OUT=film.mp4 [ENGINE=kokoro VOICE=af_heart]
+	@python3 scripts/film-narrate.py --video $(VIDEO) --timeline $(TIMELINE) --out $(OUT) $(if $(ENGINE),--engine $(ENGINE),) $(if $(VOICE),--voice $(VOICE),)
+
+film-publish: ## Publish film artifacts to Blossom: make film-publish RUN=results/films/<id>
+	@python3 scripts/publish-film.py --run $(RUN) $(if $(SERVER),--server $(SERVER),)
+
+# --- MeshLink <-> TollGate QEMU interop lane ---
+
+MESHLINK_LAB := scripts/meshlink-lab.py
+
+.PHONY: meshlink-lab-prepare meshlink-lab-up meshlink-lab-up-with-beta meshlink-lab-down meshlink-lab-status meshlink-lab-provision meshlink-lab-smoke meshlink-lab-buy meshlink-lab-replay meshlink-lab-buyer meshlink-lab-beta meshlink-lab-chain meshlink-lab-chain-physical meshlink-interop
+
+meshlink-lab-prepare: ## Prepare MeshLink gateway/client QEMU overlays and seeds
+	python3 $(MESHLINK_LAB) prepare
+
+meshlink-lab-up: ## Start the MeshLink upstream/mesh/mgmt bridges, mint, and VMs
+	python3 $(MESHLINK_LAB) start
+
+meshlink-lab-up-with-beta: ## Start the MeshLink lab plus the Beta seller and mint
+	python3 $(MESHLINK_LAB) --with-beta start
+
+meshlink-lab-down: ## Stop the MeshLink VMs, mint, and bridges
+	python3 $(MESHLINK_LAB) stop
+
+meshlink-lab-status: ## Show MeshLink lab VM/mint/bridge status
+	python3 $(MESHLINK_LAB) status
+
+meshlink-lab-provision: ## Install the MeshLink gateway + broker inside the lab VM
+	python3 $(MESHLINK_LAB) provision
+
+meshlink-lab-smoke: ## Check broker health, advert shape, and client visibility
+	python3 $(MESHLINK_LAB) smoke
+
+meshlink-lab-buy: ## Buy a session from MeshLink with tollgate-agent
+	python3 $(MESHLINK_LAB) buy
+
+meshlink-lab-replay: ## Redeem one token twice; reject replay and wrong mint
+	python3 $(MESHLINK_LAB) replay
+
+meshlink-lab-buyer: ## Exercise the broker buyer against a local mock TollGate
+	python3 $(MESHLINK_LAB) buyer
+
+meshlink-lab-beta: ## Start/status the Beta seller and mint
+	python3 $(MESHLINK_LAB) beta-start
+
+meshlink-lab-chain: ## Pay Beta, steer guest traffic through it, verify renewal
+	python3 $(MESHLINK_LAB) chain
+
+meshlink-lab-chain-physical: ## Chain through a physical TollGate seller (set MESHLINK_SELLER_URL)
+	python3 $(MESHLINK_LAB) --seller-place "$${MESHLINK_SELLER_PLACE:-physical-seller}" chain
+
+meshlink-interop: meshlink-lab-smoke meshlink-lab-buy meshlink-lab-replay ## Seller acceptance: advert + agent purchase + replay + internet

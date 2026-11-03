@@ -16,7 +16,7 @@ import requests
 
 from lib.constants import BACKEND_PORT
 
-pytestmark = [pytest.mark.api, pytest.mark.go_only]
+pytestmark = [pytest.mark.story("O4"),pytest.mark.api, pytest.mark.go_only]
 
 
 def _get_config_mint_url(router):
@@ -28,7 +28,7 @@ def _get_config_mint_url(router):
 def _set_mint_url(router, new_url):
     router.ssh(
         f"jq '.accepted_mints[0].url = \"{new_url}\"' /etc/tollgate/config.json"
-        f" > /tmp/cfg.json && mv /tmp/cfg.json /etc/tollgate/config.json",
+        f" > /etc/tollgate/.cfg.tmp && mv /etc/tollgate/.cfg.tmp /etc/tollgate/config.json",
         timeout=10,
     )
     router.restart_backend(timeout=45)
