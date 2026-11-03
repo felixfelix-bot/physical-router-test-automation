@@ -303,6 +303,8 @@ def pytest_addoption(parser):
                      help="Restore previous binary after tests")
     parser.addoption("--no-deploy", action="store_true",
                      help="Skip portal deploy before phone tests")
+    parser.addoption("--no-dut", action="store_true",
+                     help="Venue-only lifecycle: no device fixtures or diagnostics; requires --preflight=off. Not a network sandbox.")
     parser.addoption("--read-only", action="store_true",
                      help="Fail-closed commission mode (incident 2026-10-01, fix F1): "
                           "no deploy, no state prep, router mutators raise, and "
@@ -349,6 +351,15 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    if config.getoption("--no-dut", default=False):
+        if IS_MOCK_MODE or os.environ.get("TOLLGATE_USE_HARDWARE_LOCK", "").lower() in ("1", "true", "yes"):
+            raise pytest.UsageError("--no-dut forbids mock-server and hardware-lock modes")
+        if config.getoption("--preflight", default="auto") != "off":
+            raise pytest.UsageError("--no-dut requires explicit --preflight=off")
+        incompatible = ("--film", "--binary", "--tollgate-branch", "--tollgate-run-id", "--lock-phase")
+        if any(config.getoption(name, default=None) for name in incompatible):
+            raise pytest.UsageError("--no-dut forbids film, deployment and hardware-lock options")
+
     lab_type_opt = config.getoption("--lab-type", default=None)
     if lab_type_opt:
         os.environ["TOLLGATE_LAB_TYPE"] = lab_type_opt
@@ -364,6 +375,19 @@ def pytest_configure(config):
         from lib.mock_router import get_mock_server as _gms
         _srv = _gms()
         os.environ["TOLLGATE_BACKEND_URL"] = _srv.url
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_fixture_setup(fixturedef, request):
+    # Reject rather than skip: asking for DUT work must not look qualified.
+    # router itself remains available to own the actual venue lifecycle.
+    device_fixtures = {
+        "adb", "secondary_router", "chain_routers", "all_routers",
+        "serial_console", "cashu", "m5_mint", "wifi", "connected_wifi",
+        "test_pricing", "minted_token",
+    }
+    if request.config.getoption("--no-dut", default=False) and fixturedef.argname in device_fixtures:
+        raise pytest.UsageError(f"--no-dut forbids device fixture {fixturedef.argname}")
 
 
 @pytest.fixture(scope="session")
@@ -393,6 +417,8 @@ def backend(request):
 
 @pytest.fixture(scope="session")
 def router(request, backend):
+    if request.config.getoption("--no-dut", default=False) and backend.is_rust_v2:
+        raise pytest.UsageError("--no-dut requires the venue-owning router backend, not rust-v2")
     if backend.is_rust_v2:
         # The rust-v2 lane brings up tollgated/mintd/merchantd itself
         # (lib/tollgate_rs.py); there is no router to drive.
@@ -507,6 +533,11 @@ def router(request, backend):
             )
         elif venue_plan.detail:
             log.info("router venue: %s — legacy env path", venue_plan.detail)
+
+    # Keep claim validation, venue acquisition and its finalizer above intact.
+    # Return before constructing Router or discovering any client addresses.
+    if request.config.getoption("--no-dut", default=False):
+        return None
 
     host = os.environ.get("TOLLGATE_SSH_HOST") or os.environ.get("ROUTER_IP")
     identity_file = os.environ.get("TOLLGATE_SSH_KEY", "")
@@ -957,6 +988,8 @@ def _mock_fast_sleep():
 
 @pytest.fixture(autouse=True)
 def container_nds_preflight(request):
+    if request.config.getoption("--no-dut", default=False):
+        return
     if not _is_container_client(request.config):
         return
     if not os.environ.get("TOLLGATE_VIRTUAL_LAB"):
@@ -1514,6 +1547,10 @@ def pytest_runtest_makereport(item, call):
         extras.extend(screenshot_extras)
         report.extras = extras
 
+    if report.when == "call" and item.config.getoption("--no-dut", default=False):
+        _write_debug_log(item, report, getattr(item, "_results_dir", None))
+        return
+
     if report.when == "call":
         results_dir = getattr(item, "_results_dir", None)
         adb = item.funcargs.get("adb")
@@ -1668,6 +1705,9 @@ def pytest_sessionstart(session):
     # down — the venue must address-match the operator's choice, never the
     # substitute (wrong-DUT class, venue review finding #1).
     session._tollgate_operator_ssh_host = os.environ.get("TOLLGATE_SSH_HOST")
+    if session.config.getoption("--no-dut", default=False):
+        session._tollgate_preflight_snapshot = None
+        return
     try:
         session._tollgate_preflight_snapshot = _run_preflight_session(session)
     except Exception as exc:
@@ -1708,6 +1748,8 @@ def pytest_sessionstart(session):
 def pytest_sessionfinish(session, exitstatus):
     _save_test_metadata(session)
 
+    if session.config.getoption("--no-dut", default=False):
+        return
     if IS_MOCK_MODE:
         return
 

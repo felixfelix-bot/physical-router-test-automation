@@ -1,3 +1,46 @@
+# No-DUT boundary prerequisite — not fleet qualification
+
+Base `8d52f451bc08e86bfc54a34ad04969539eda3c9f`; isolated branch
+`pr/prta-no-dut-boundary`. Added explicit `--no-dut --preflight=off` root
+fixture/hook mode. Actual claim/venue mutex ownership and finalizers remain in
+place; the primary fixture returns None before Router construction. Device
+fixtures fail closed; success/failure diagnostics cannot initiate DUT reads.
+Normal hardware diagnostics retain positive-control coverage.
+
+## Verified offline only
+
+- Initial RED: **23 failed, 4 passed, 2 teardown errors**. Missing validation,
+  missing fixture gate, leaked diagnostic callbacks and intercepted Router/AP
+  calls. Teardown errors intentionally exposed recorded forbidden attempts;
+  no real transport ran.
+- Conflict RED: **3 failed, 28 passed** for mock-server, hardware-lock and
+  rust-v2 shortcut incompatibilities. GREEN: **33 passed**.
+- Focused regression with existing claim handoff suite: **101 passed in 0.36s**.
+  Two legacy call-trace assertions now explicitly require exactly two pure
+  `--no-dut` reads and compare all remaining calls unchanged (not a weakened
+  admission assertion).
+- Changed production statement coverage: **27/27 (100%)**, measured using
+  stdlib tracing and AST statement starts intersected with added diff lines.
+  Existing venv lacks coverage.py; no installation attempted. Reproducible
+  measurement script is in `evidence/no-dut-boundary/` (run from repo root with
+  PYTHONPATH=. and the existing dependency-complete Python). This is changed
+  statement coverage, not whole-file or branch coverage.
+- `git diff --check` passed. Tests use `--noconftest`, import real functions,
+  and replace transport/venue boundaries with recording doubles. No integration
+  replay, SSH, probes, coordinator, VM, install or credentials operation ran.
+
+## Limits / next gate
+
+This is a root-fixture boundary, **not an OS network sandbox**: arbitrary test
+code, nested plugins and direct transport imports are outside its contract.
+No successful real coordinator lifecycle, admission/renewal/release or fleet
+qualification is claimed. Future execution needs a separately reviewed empty
+place child and independently enforced network isolation where required; the
+archived draft was read for design only and must not be replayed.
+See `docs/no-dut-boundary.md` for supported scope and incompatible modes.
+
+---
+
 # Resume audit reporting corrections (2026-11-03)
 
 Base `6ccb3df6e7d8dfc8b554ea25473b2ec8d1f9299d`, fetched from

@@ -1,3 +1,13 @@
+# PROGRESS — offline no-DUT boundary
+
+- Implemented opt-in fixture/hook boundary on `pr/prta-no-dut-boundary`.
+- RED observed; 33 boundary tests and 101 combined focused tests pass.
+- 27/27 changed production statements executed by offline doubles tests.
+- Docs and REPORT distinguish boundary evidence from real qualification.
+- No integration replay or hardware access; real qualification remains pending.
+
+---
+
 # PROGRESS — endpoint binding (requirement 1 + non-overlap half of 2)
 
 Branch `pr/fleet-endpoint-binding`, worktree `~/worktrees/prta-endpoint-binding`,
