@@ -1,0 +1,73 @@
+current_level: None
+
+=== PRTA Preflight — 2026-11-03 04:24:08 ===
+Routers (no inventory)
+  (none configured)
+ADB
+  [FAIL] adb CLI not available
+Docker / cloud-lab
+  [WARN] docker CLI not found
+Virtual lab (local QEMU)
+  [OK]  pids alive: none; bridge tg-poc-br
+Runnable lanes
+  NO   api            — routers ready: none
+  NO   phone          — routers: none; adb ready: False
+  NO   web            — routers reachable: none
+  NO   scenarios      — routers ready: none
+  YES  virtual-lab    — alive pids: 0; bridge: tg-poc-br
+  NO   cloud-lab      — lab images: 0
+Snapshot: /home/c08r4d0r/worktrees/t_ed8c3c6e/pta/tests/../results/preflight-latest.json
+
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/c08r4d0r/.tollgate-test-venv/bin/python
+metadata: {'Python': '3.12.3', 'Platform': 'Linux-7.0.0-38-generic-x86_64-with-glibc2.39', 'Packages': {'pytest': '9.1.1', 'pluggy': '1.6.0'}, 'Plugins': {'anyio': '4.15.1', 'json-report': '1.5.0', 'labgrid': '26.0', 'timeout': '2.4.0', 'asyncio': '1.4.1.post1', 'metadata': '3.1.1', 'html': '4.2.0', 'rerunfailures': '16.7'}}
+rootdir: /home/c08r4d0r/worktrees/t_ed8c3c6e/pta
+configfile: pytest.ini
+plugins: anyio-4.15.1, json-report-1.5.0, labgrid-26.0, timeout-2.4.0, asyncio-1.4.1.post1, metadata-3.1.1, html-4.2.0, rerunfailures-16.7
+timeout: 80.0s
+timeout method: thread
+timeout func_only: False
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 4 items
+
+tests/api/test_virtual_lab_router_smoke.py::test_router_api_port_reachable_from_host 
+-------------------------------- live log setup --------------------------------
+INFO    tollgate.confte: router venue: venue auto: non-physical lab type — legacy env path
+WARNING tollgate.confte: TOLLGATE_SSH_HOST or ROUTER_IP not set — router fixture returns None
+INFO    tollgate.confte: Skipping deployment (no router available)
+ERROR                                                                    [ 25%]
+tests/api/test_virtual_lab_router_smoke.py::test_info_event_is_kind_10021 ERROR [ 50%]
+tests/api/test_virtual_lab_router_smoke.py::test_info_event_is_full_mode_not_degraded ERROR [ 75%]
+tests/api/test_virtual_lab_router_smoke.py::test_balance_reports_idle_session ERROR [100%]
+
+==================================== ERRORS ====================================
+__________ ERROR at setup of test_router_api_port_reachable_from_host __________
+tests/api/test_virtual_lab_router_smoke.py:119: in api_up
+    pytest.fail(
+E   Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+---------------------------- Captured stderr setup -----------------------------
+04:24:08 [tollgate.conftest] router venue: venue auto: non-physical lab type — legacy env path
+04:24:08 [tollgate.conftest] TOLLGATE_SSH_HOST or ROUTER_IP not set — router fixture returns None
+04:24:08 [tollgate.conftest] Skipping deployment (no router available)
+------------------------------ Captured log setup ------------------------------
+INFO    tollgate.confte: router venue: venue auto: non-physical lab type — legacy env path
+WARNING tollgate.confte: TOLLGATE_SSH_HOST or ROUTER_IP not set — router fixture returns None
+INFO    tollgate.confte: Skipping deployment (no router available)
+_______________ ERROR at setup of test_info_event_is_kind_10021 ________________
+tests/api/test_virtual_lab_router_smoke.py:119: in api_up
+    pytest.fail(
+E   Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+_________ ERROR at setup of test_info_event_is_full_mode_not_degraded __________
+tests/api/test_virtual_lab_router_smoke.py:119: in api_up
+    pytest.fail(
+E   Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+_____________ ERROR at setup of test_balance_reports_idle_session ______________
+tests/api/test_virtual_lab_router_smoke.py:119: in api_up
+    pytest.fail(
+E   Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+=========================== short test summary info ============================
+ERROR tests/api/test_virtual_lab_router_smoke.py::test_router_api_port_reachable_from_host - Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+ERROR tests/api/test_virtual_lab_router_smoke.py::test_info_event_is_kind_10021 - Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+ERROR tests/api/test_virtual_lab_router_smoke.py::test_info_event_is_full_mode_not_degraded - Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+ERROR tests/api/test_virtual_lab_router_smoke.py::test_balance_reports_idle_session - Failed: tollgate-wrt API never became reachable at 10.99.99.77:2121 within 20s. The router VM may be down, the module may not be installed, or the service failed to start — check logs/serial.log and `virtual-lab.py verify-lab`.
+============================== 4 errors in 20.11s ==============================

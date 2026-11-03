@@ -78,21 +78,30 @@ wrong — not the test.
 
 Token minting needs a Cashu client, and **neither one is installed by default**
 (this was a measured dead end: `pip install cashu` does not resolve because its
-`breez-sdk-spark` pin is gone). Use the CDK reference wallet, which is what the
-mint itself is built from:
+`breez-sdk-spark` pin is gone; and a `cashu` entrypoint that does exist in a
+prepared venv dies with `ModuleNotFoundError: No module named 'bech32'`). Use the
+CDK reference wallet — the lab mint *is* a CDK mint:
 
 ```bash
 # one-time, checksum-verified against cdk's published SHA256SUMS
-curl -fsSL -o /usr/local/bin/cdk-cli \
-  https://github.com/cashubtc/cdk/releases/download/v0.18.3/cdk-cli-0.18.3-x86_64
-chmod +x /usr/local/bin/cdk-cli
-
-LAB_CDK_CLI=/usr/local/bin/cdk-cli scripts/lab/run-lab.sh purchase
+scripts/lab/fetch-cdk-cli.sh "$LAB_DIR"        # prints the verified path
+# or let `purchase` do it:
+scripts/lab/run-lab.sh purchase
 ```
 
-Without `LAB_CDK_CLI`, `purchase-e2e.py` falls back to `create_minter()`
-(`cdk-cli` on PATH, else the nutshell `cashu` CLI) and exits **11** with an
-explicit "no minter" message rather than pretending.
+`purchase` calls `fetch-cdk-cli.sh` itself when `LAB_CDK_CLI` is unset, so the
+prerequisite is normally invisible. The script downloads the pinned
+`cdk-cli-<version>-<arch>` asset, compares it against cdk's release
+`SHA256SUMS`, and **refuses to keep bytes that do not match** — an earlier
+version of this document told the operator to `curl` the binary into
+`/usr/local/bin` and called it "checksum-verified" while verifying nothing.
+
+Override the pin with `CDK_VERSION`, or point at an existing binary with
+`LAB_CDK_CLI=/path/to/cdk-cli`.
+
+Without a client, `purchase-e2e.py` falls back to `create_minter()` (`cdk-cli` on
+PATH, else the nutshell `cashu` CLI) and exits **11** with an explicit "no
+minter" message rather than pretending.
 
 ---
 

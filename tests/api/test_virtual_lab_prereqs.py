@@ -22,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LAB = REPO_ROOT / "scripts" / "lab"
 FETCH = LAB / "fetch-apk.sh"
 DNS = LAB / "lab-dns.sh"
+FETCH_CDK = LAB / "fetch-cdk-cli.sh"
 RUN_LAB = LAB / "run-lab.sh"
 VIRTUAL_LAB = REPO_ROOT / "scripts" / "virtual-lab.py"
 
@@ -33,7 +34,7 @@ def _read(path: Path) -> str:
     return path.read_text()
 
 
-@pytest.mark.parametrize("script", [FETCH, DNS, RUN_LAB, LAB / "start-fake-mint.sh"])
+@pytest.mark.parametrize("script", [FETCH, DNS, FETCH_CDK, RUN_LAB, LAB / "start-fake-mint.sh"])
 def test_scripts_are_valid_bash(script):
     r = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
     assert r.returncode == 0, f"bash -n failed for {script.name}:\n{r.stderr}"
@@ -188,3 +189,96 @@ def test_start_fake_mint_checks_the_advertised_url():
     assert 'http://${HOST_ADDR}:${PORT}/v1/keys' in body, (
         "the guest-facing probe must hit the lab address"
     )
+
+
+# ── 4. the Cashu client prerequisite (the purchase needs a minter) ───────────
+#
+# Measured dead end this replaces: the docs told the operator to `curl` cdk-cli
+# into /usr/local/bin and called it "checksum-verified" — the command verified
+# nothing, and nothing checked that the binary was even a real cdk-cli. Both
+# properties are now pinned here, because an unverified minter makes every
+# "the purchase passed" claim unfounded.
+
+def test_purchase_stages_a_verified_cdk_cli_itself():
+    """`purchase` must resolve its minter instead of exiting 11 on a host that
+    has cdk-mintd but no client — the gap that stopped the previous run."""
+    body = _read(RUN_LAB)
+    assert "fetch-cdk-cli.sh" in body, (
+        "run-lab.sh purchase must stage cdk-cli when LAB_CDK_CLI is unset"
+    )
+    purchase_at = body.index("cmd_purchase()")
+    assert "fetch-cdk-cli.sh" in body[purchase_at:], (
+        "the fetch must happen inside cmd_purchase, not only at the top of the file"
+    )
+    assert "LAB_CDK_CLI=" in body, "the resolved path must be passed to purchase-e2e.py"
+
+
+def test_fetch_cdk_cli_verifies_against_published_checksums():
+    """The download must be refused unless it matches cdk's SHA256SUMS.
+
+    cdk publishes a SHA256SUMS asset per release; comparing against it is the
+    only thing that makes the binary trustworthy. A missing checksum line must
+    be a hard failure, not a warning.
+    """
+    body = _read(FETCH_CDK)
+    assert "SHA256SUMS" in body, "fetch-cdk-cli.sh must consult the published sums"
+    assert re.search(r'\[ "\$expected" = "\$actual" \]', body), (
+        "fetch-cdk-cli.sh must compare expected vs actual digest"
+    )
+    assert re.search(r"no checksum line for", body), (
+        "a missing checksum line must be refused, not ignored"
+    )
+    assert re.search(r"checksum mismatch", body), (
+        "a mismatch must abort instead of installing unknown bytes"
+    )
+
+
+def test_fetch_cdk_cli_records_the_digest_it_verified():
+    """Without a recorded digest a re-run silently trusts whatever is on disk:
+    the binary could be swapped between runs and nothing would notice."""
+    body = _read(FETCH_CDK)
+    assert re.search(r"\.sha256", body), (
+        "fetch-cdk-cli.sh must persist the verified digest next to the binary"
+    )
+    assert "already staged and verified" in body, (
+        "a re-run must re-verify the staged binary rather than assume it is good"
+    )
+
+
+def test_docs_do_not_claim_unverified_installation():
+    """The README must not point operators at a bare `curl -o /usr/local/bin`.
+
+    That instruction existed and was labelled 'checksum-verified' while doing no
+    verification at all — a documentation defect that makes the rail's evidence
+    unfounded. Pin the corrected path so it cannot come back.
+    """
+    body = _read(REPO_ROOT / "docs" / "VIRTUAL-LAB.md")
+    assert "fetch-cdk-cli.sh" in body, (
+        "the docs must point at the verifying fetch script"
+    )
+    assert "curl -fsSL -o /usr/local/bin/cdk-cli" not in body, (
+        "the unverified install instruction must not return"
+    )
+
+
+# ── 5. the negative control must FAIL LOUDLY, not time out ──────────────────
+
+def test_smoke_hard_timeout_exceeds_the_readiness_deadline():
+    """A negative control must report WHY it failed, not die by pytest-timeout.
+
+    Measured: `run-lab.sh smoke` passed `--timeout=180` while the fixture waited
+    up to `TOLLGATE_LAB_READY_TIMEOUT=180`. Pointed at a dead address, the run
+    aborted at exactly the deadline with a generic "Timeout" stack trace inside
+    `api_up` — indistinguishable from a hung lab, and it denied the operator the
+    fixture's actionable message. The hard timeout must be strictly larger.
+    """
+    body = _read(RUN_LAB)
+    smoke = body[body.index("cmd_smoke()"):body.index("cmd_purchase()")]
+    assert "hard=$(( ready + 60 ))" in smoke, (
+        "the pytest hard timeout must be derived from, and larger than, the "
+        "readiness deadline"
+    )
+    assert "--timeout=180" not in smoke, (
+        "a fixed hard timeout equal to the readiness deadline reintroduces the bug"
+    )
+    assert '--timeout="$hard"' in smoke, "the derived hard timeout must be used"

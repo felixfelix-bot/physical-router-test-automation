@@ -154,18 +154,39 @@ cmd_verify() {
 cmd_smoke() {
   local venv_py="$PY"
   [ -x "$HOME/.tollgate-test-venv/bin/python" ] && venv_py="$HOME/.tollgate-test-venv/bin/python"
+  # The per-test timeout must EXCEED the fixture's readiness deadline, or the
+  # negative control dies by a generic pytest "Timeout" stack trace instead of
+  # the fixture's actionable "never became reachable" message. Measured: with
+  # both at 180s the run aborted exactly at the deadline and the operator saw a
+  # traceback that cannot be told apart from a hung lab.
+  local ready="${LAB_VERIFY_TIMEOUT:-180}"
+  local hard=$(( ready + 60 ))
   TOLLGATE_VIRTUAL_LAB=1 \
   TOLLGATE_VIRTUAL_GATEWAY="${LAB_ROUTER:-10.99.99.1}" \
-  TOLLGATE_LAB_READY_TIMEOUT="${LAB_VERIFY_TIMEOUT:-180}" \
+  TOLLGATE_LAB_READY_TIMEOUT="$ready" \
     "$venv_py" -m pytest tests/api/test_virtual_lab_router_smoke.py -v \
-      --timeout=180 -p no:cacheprovider
+      --timeout="$hard" -p no:cacheprovider
 }
 
 cmd_purchase() {
   log "NOTE: the purchase rail is structurally inert on the single-NIC lab."
   log "      See 'RAIL STATUS' in this file and the README before reading a failure as a product bug."
+  # A Cashu client is a prerequisite of the purchase, not part of the module.
+  # Without one, purchase-e2e.py exits 11 "no minter" — a prerequisite gap that
+  # reads like a rail failure. Stage a checksum-verified cdk-cli instead; the
+  # lab mint IS a CDK mint, so the CDK reference wallet is the right client.
+  if [ -z "${LAB_CDK_CLI:-}" ]; then
+    LAB_CDK_CLI="$("$REPO_ROOT/scripts/lab/fetch-cdk-cli.sh" "$LAB_DIR" 2>/dev/null | tail -1)" || true
+    if [ -z "${LAB_CDK_CLI:-}" ] || [ ! -x "$LAB_CDK_CLI" ]; then
+      log "WARNING: no verified cdk-cli available; purchase will exit 11 (no minter)"
+      LAB_CDK_CLI=""
+    else
+      log "cdk-cli: $LAB_CDK_CLI"
+    fi
+  fi
   LAB_ROUTER="${LAB_ROUTER:-10.99.99.1}" \
   LAB_MINT="${LAB_MINT:-http://10.99.99.2:8383}" \
+  LAB_CDK_CLI="${LAB_CDK_CLI:-}" \
   PTA_ROOT="$REPO_ROOT" \
     "$PY" "$REPO_ROOT/scripts/lab/purchase-e2e.py"
 }
