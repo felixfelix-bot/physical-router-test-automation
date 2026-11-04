@@ -28,6 +28,23 @@ class ManifestTests(unittest.TestCase):
                 mapping(inventory, project)
 
 
+    def test_distro_package_discovery(self):
+        import json
+        import subprocess
+        inv = json.loads((Path(__file__).resolve().parents[1] / 'evidence/managed-runner-trial/python312-inventory.json').read_text())
+        result = mapping(inv, Path('/home/c08r4d0r/worktrees/prta-managed-runner-trial'))
+        sites = json.loads(subprocess.check_output([
+            '/usr/bin/python3.12', '-I', '-B', '-c',
+            'import site,json; print(json.dumps(site.getsitepackages(["/runtime"])))'], text=True))
+        packages = [r for r in result['files'] if '/site-packages/' in r['source']]
+        self.assertTrue(packages)
+        for row in packages:
+            self.assertTrue(any(row['target'].startswith(p + '/') for p in sites), row['target'])
+        targets = {r['target'] for r in packages}
+        for name in ('labgrid/__init__.py', 'pytest_html/__init__.py'):
+            self.assertIn('/runtime/lib/python3.12/dist-packages/' + name, targets)
+        self.assertTrue(any('.dist-info/METADATA' in p for p in targets))
+
     def test_native_loader_paths(self):
         import json
         inv = json.loads((Path(__file__).resolve().parents[1] / 'evidence/managed-runner-trial/python312-inventory.json').read_text())

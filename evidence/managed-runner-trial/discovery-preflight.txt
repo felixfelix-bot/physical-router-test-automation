@@ -1,0 +1,18 @@
+{
+  "sys_path": [
+    "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python312.zip",
+    "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12",
+    "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12/lib-dynload",
+    "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12/dist-packages"
+  ],
+  "origins": {
+    "labgrid": "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12/dist-packages/labgrid/__init__.py",
+    "pytest_html": "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12/dist-packages/pytest_html/__init__.py",
+    "sqlite3": "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12/sqlite3/__init__.py",
+    "_sqlite3": "/home/c08r4d0r/.tmp/prta-discovery-q4tezf5z/runtime/lib/python3.12/lib-dynload/_sqlite3.cpython-312-x86_64-linux-gnu.so"
+  },
+  "metadata": {
+    "labgrid": "26.0.1",
+    "pytest-html": "4.2.0"
+  }
+}

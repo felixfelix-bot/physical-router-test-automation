@@ -29,7 +29,8 @@ def mapping(inventory, project):
             if relative.endswith('.pth') or relative.startswith('__editable_'):
                 omitted.append(source)
                 continue
-            target = '/runtime/lib/python3.12/site-packages/' + relative
+            # Pinned distro Python uses Debian site discovery, not venv paths.
+            target = '/runtime/lib/python3.12/dist-packages/' + relative
         elif source in {prefix + '/bin/labgrid-client', prefix + '/bin/labgrid-coordinator'}:
             target = '/runtime/bin/' + Path(source).name
         elif source.startswith('/usr/lib/python3.12/'):

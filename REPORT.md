@@ -1,3 +1,49 @@
+## Package-discovery retry — parser FAILED (2026-11-04)
+
+One authorized same-policy retry executed; STOP on new error, no further service.
+Generator now maps packages to `/runtime/lib/python3.12/dist-packages/`.
+Offline `/usr/bin/python3.12 -I -B` measured Debian site.getsitepackages:
+`/runtime/local/lib/python3.12/dist-packages`, `/runtime/lib/python3/dist-packages`,
+`/runtime/lib/python3.12/dist-packages`; sysconfig default posix_local purelib
+is `/runtime/local/lib/python3.12/dist-packages`. The selected versioned fallback
+is in actual site discovery. No PYTHONPATH, -I removal, mount or policy change.
+
+RED: new real-inventory discovery test failed on old site-packages target.
+GREEN: 5 generator tests; stdlib trace 74/89 = 83.15%, changed executable line
+33 hit (100% changed production coverage). Existing 35 harness tests pass under
+installed `.tollgate-test-venv/bin/python`, aggregate coverage 80.86%. Initial
+host Python test invocation lacked pytest_html; rerun used existing venv, no install.
+
+Existing mapping() regenerated NEW `staging-dist-packages.json`, 6999 rows,
+SHA256 `280a382ea3df18e0ecd6086349dc1b9e9799ed26a5246eaf17a8ea3077bf751f`. Source hashes, sizes, metadata and
+ELF mappings revalidated/retained. Offline copied-interpreter -I -B preflight
+found labgrid, pytest_html, sqlite3 and _sqlite3 in staged paths and original
+metadata labgrid=26.0.1, pytest-html=4.2.0; `discovery-preflight.txt` records it.
+This discovery preflight is not service isolation evidence.
+
+Actual service `prta-smoke-ae48bc92e3af.service`, InvocationID
+`60e63f21c7084537a02737f85c65e13b`, PID 4083309, live cgroup
+`/system.slice/prta-smoke-ae48bc92e3af.service`, populated=1.
+Command: `python3 tools/systemd_smoke.py evidence/managed-runner-trial/staging-dist-packages.json evidence/managed-runner-trial/parser-dist-packages --mode parser`.
+Actual imports passed labgrid/pytest in main, sqlite3/labgrid/pytest_html in
+parser_probe; in-memory sqlite select succeeded; labgrid-client --help returned 0
+(inferred from reaching the subsequent checked subprocess, not separate output).
+Identity/capabilities, home/executable exclusions, read-only runtime/source,
+serial/environment exclusions and loopback roundtrip assertions passed.
+
+NEW ERROR: pytest command returned exit 1:
+`/runtime/bin/python3 -I -B -m pytest -p labgrid.pytestplugin -p pytest_html.plugin --noconftest -c /dev/null --lg-env /work/unused.yaml --html /work/unused.html --self-contained-html --help`.
+Exact journal has CalledProcessError at systemd_smoke_child.py:47. Existing
+capture_output hides subprocess stderr on exception; underlying pytest error
+is UNKNOWN, not guessed. Flags were attempted, NOT proven accepted. No parser
+PASS and no readiness claim. No additional diagnostic service/retry performed.
+
+Terminal Result=exit-code, ExecMainCode=1, ExecMainStatus=1, failed/failed.
+Cleanup verified cgroup_removed, staging_removed=true, final LoadState=not-found.
+Raw evidence/manifest/journal in `evidence/managed-runner-trial/parser-dist-packages/`;
+launcher output in `parser-dist-packages-output.txt`. No coordinator, runner,
+hardware, SSH, installs or existing quarantines touched. Policy/child unchanged.
+
 ## Parser-mode milestone: real service FAILED (2026-11-04)
 
 One authorized service was executed; no second service was attempted. The exact
