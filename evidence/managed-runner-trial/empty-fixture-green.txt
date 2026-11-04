@@ -1,0 +1,16 @@
+F
+======================================================================
+FAIL: test_real_parser_probe (test_parser_empty_fixture.EmptyFixtureTests.test_real_parser_probe)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/c08r4d0r/worktrees/prta-managed-runner-trial/tools/test_parser_empty_fixture.py", line 35, in test_real_parser_probe
+    child.parser_probe()
+  File "/home/c08r4d0r/worktrees/prta-managed-runner-trial/tools/systemd_smoke_child.py", line 75, in parser_probe
+    assert flag in parser.stdout, flag
+           ^^^^^^^^^^^^^^^^^^^^^
+AssertionError: --junitxml
+
+----------------------------------------------------------------------
+Ran 1 test in 1.303s
+
+FAILED (failures=1)

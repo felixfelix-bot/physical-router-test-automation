@@ -26,8 +26,8 @@ class ParserModeTests(unittest.TestCase):
         def run(command, **kwargs):
             self.assertNotIn('labgrid-coordinator', command)
             self.assertTrue(kwargs['check'])
-            return SimpleNamespace(stdout='--lg-env --html --self-contained-html', returncode=0)
-        with patch.object(child.subprocess, 'run', side_effect=run) as mocked:
+            return SimpleNamespace(stdout='--lg-env --html --self-contained-html --junit-xml', returncode=0)
+        with patch.object(child, 'check_layout'), patch.object(child.Path, 'read_bytes', return_value=b'targets: {}\n'), patch.object(child.subprocess, 'run', side_effect=run) as mocked:
             child.parser_probe()
         self.assertEqual(mocked.call_count, 2)
         command = mocked.call_args.args[0]

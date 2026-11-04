@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import socket
 import time
+import tempfile
 
 
 def check_identity():
@@ -36,8 +37,9 @@ def console_command(name):
 def parser_command():
     return ['/runtime/bin/python3', '-I', '-B', '-m', 'pytest',
             '-p', 'labgrid.pytestplugin', '-p', 'pytest_html.plugin',
-            '--noconftest', '-c', '/dev/null', '--lg-env', '/work/unused.yaml',
-            '--html', '/work/unused.html', '--self-contained-html', '--help']
+            '--noconftest', '-c', '/dev/null', '--lg-env', '/source/empty-labgrid.yaml',
+            '--html', '/work/unused.html', '--self-contained-html',
+            '--junitxml', '/work/unused.xml', '--help']
 
 
 def reviewed_help(command, **kwargs):
@@ -60,15 +62,29 @@ def reviewed_help(command, **kwargs):
         raise
 
 
+def check_layout():
+    fixture = Path('/source/empty-labgrid.yaml')
+    assert fixture.read_bytes() == b'targets: {}\n'
+    assert not fixture.stat().st_mode & 0o222
+    # Only ephemeral data is written; never configuration. Fails before dependencies.
+    with tempfile.TemporaryDirectory(prefix='layout-', dir='/work') as directory:
+        probe = Path(directory) / 'result'
+        probe.write_bytes(b'work-contract')
+        assert probe.read_bytes() == b'work-contract'
+
+
 def parser_probe():
+    check_layout()
     import sqlite3
     import labgrid
     import pytest_html
     assert sqlite3.connect(':memory:').execute('select 1').fetchone() == (1,)
     client = reviewed_help(console_command('labgrid-client'))
+    # Fixed inert labgrid schema; no imports, resources or external references.
+    assert Path('/source/empty-labgrid.yaml').read_bytes() == b'targets: {}\n'
     command = parser_command()
     parser = reviewed_help(command, env={**os.environ, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'})
-    for flag in ('--lg-env', '--html', '--self-contained-html'):
+    for flag in ('--lg-env', '--html', '--self-contained-html', '--junit-xml'):
         assert flag in parser.stdout, flag
     print(json.dumps({'parser': 'PASS', 'sqlite3': sqlite3.sqlite_version,
                       'imports': [labgrid.__name__, pytest_html.__name__],

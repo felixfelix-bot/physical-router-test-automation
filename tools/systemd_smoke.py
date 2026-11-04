@@ -70,11 +70,14 @@ def main():
     rows = [r for r in rows if not r['target'].startswith('/source/') and not any(s in r['target'] for s in ('/tollgate_lab/', '/__editable_', '/_virtualenv.py'))]
     validate(rows)
     child = Path(__file__).with_name('systemd_smoke_child.py').read_bytes()
+    fixture = Path(__file__).with_name('empty-labgrid.yaml').read_bytes()
+    assert fixture == b'targets: {}\n'
     unit = 'prta-smoke-' + uuid.uuid4().hex[:12] + '.service'
     root = Path('/var/lib') / unit.removesuffix('.service')
     evidence = {'unit': unit, 'root': str(root), 'policy': POLICY, 'cleanup': 'QUARANTINE'}
     manifest = {r['target']: r['sha256'] for r in rows}
     manifest['/source/systemd_smoke_child.py'] = hashlib.sha256(child).hexdigest()
+    manifest['/source/empty-labgrid.yaml'] = hashlib.sha256(fixture).hexdigest()
     (args.evidence / 'manifest.json').write_text(json.dumps(manifest, indent=2))
     # Persist quarantine before any privileged staging operation can fail.
     (args.evidence / 'evidence.json').write_text(json.dumps(evidence, indent=2))
@@ -89,6 +92,8 @@ def main():
             dest.chmod(0o555 if data.startswith(b'\x7fELF') else 0o444)
         (stage / 'source').mkdir()
         (stage / 'source/systemd_smoke_child.py').write_bytes(child)
+        (stage / 'source/empty-labgrid.yaml').write_bytes(fixture)
+        (stage / 'source/empty-labgrid.yaml').chmod(0o444)
         for name in ('work', 'proc', 'sys', 'dev', 'tmp', 'run', 'home', 'root'):
             (stage / name).mkdir(exist_ok=True)
         run('sudo', '-n', '/usr/bin/mkdir', '-m', '0755', str(root))

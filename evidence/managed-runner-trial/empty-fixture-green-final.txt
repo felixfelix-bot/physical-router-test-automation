@@ -1,0 +1,6 @@
+{"parser": "PASS", "sqlite3": "3.45.1", "imports": ["labgrid", "pytest_html"], "client_help_exit": 0, "pytest_help_exit": 0, "argv": ["/runtime/bin/python3", "-I", "-B", "-m", "pytest", "-p", "labgrid.pytestplugin", "-p", "pytest_html.plugin", "--noconftest", "-c", "/dev/null", "--lg-env", "/work/empty.yaml", "--html", "/work/unused.html", "--self-contained-html", "--junitxml", "/work/unused.xml", "--help"]}
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.446s
+
+OK

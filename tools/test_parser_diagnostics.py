@@ -13,7 +13,7 @@ class DiagnosticsTests(unittest.TestCase):
         error = subprocess.CalledProcessError(7, command, output='o' * 20000,
                                              stderr='decisive failure')
         output = io.StringIO()
-        with patch.object(child.subprocess, 'run', side_effect=error), contextlib.redirect_stdout(output):
+        with patch.object(child, 'check_layout'), patch.object(child.Path, 'read_bytes', return_value=b'targets: {}\n'), patch.object(child.subprocess, 'run', side_effect=error), contextlib.redirect_stdout(output):
             with self.assertRaises(subprocess.CalledProcessError):
                 child.parser_probe()
         record = json.loads(output.getvalue())
@@ -28,7 +28,7 @@ class DiagnosticsTests(unittest.TestCase):
         for error in (subprocess.CalledProcessError(1, command, 'out', 'err'),
                       subprocess.TimeoutExpired(command, 15, output=b'out', stderr=b'err')):
             output = io.StringIO()
-            with patch.object(child.subprocess, 'run', side_effect=error), contextlib.redirect_stdout(output):
+            with patch.object(child, 'check_layout'), patch.object(child.Path, 'read_bytes', return_value=b'targets: {}\n'), patch.object(child.subprocess, 'run', side_effect=error), contextlib.redirect_stdout(output):
                 with self.assertRaises(type(error)):
                     child.reviewed_help(command)
             record = json.loads(output.getvalue())
