@@ -104,7 +104,13 @@ def main():
     parser.add_argument('inventory', type=Path)
     parser.add_argument('evidence', type=Path)
     parser.add_argument('--mode', choices=('adversarial', 'parser', 'lifecycle'), default='adversarial')
+    #: Which managed-lifecycle scenario the service runs. Only meaningful with
+    #: --mode lifecycle; see docs/managed-lifecycle-scenarios.md. Each scenario
+    #: is ONE bounded service — never more, never a DUT.
+    parser.add_argument('--scenario', default='baseline',
+                        choices=('baseline', 'renew', 'renewal_fail', 'renewal_expire', 'contention'))
     args = parser.parse_args()
+    assert args.mode == 'lifecycle' or args.scenario == 'baseline', '--scenario requires --mode lifecycle'
     assert int(POLICY['TasksMax']) >= TASKS_MIN, (
         f"TasksMax={POLICY['TasksMax']} cannot hold {GRPC_PROCESSES} gRPC processes "
         f"at {GRPC_TASKS_PER_PROCESS} tasks each; gRPC will hang, not fail"
@@ -161,9 +167,16 @@ def main():
     # Retain a successful parser unit until its exit metadata is durably captured.
     lifecycle = {'RemainAfterExit': 'yes'} if args.mode in ('parser', 'lifecycle') else {}
     if args.mode == 'lifecycle':
+        # Unchanged bound: every scenario must fit the original 120 s window.
         lifecycle.update(RuntimeMaxSec='120s')
     for key, value in {**POLICY, **lifecycle, 'RootDirectory': str(root)}.items():
         command += ['-p', key + '=' + value]
+    if args.mode == 'lifecycle' and args.scenario != 'baseline':
+        # systemd-run does not inherit our environment, so the scenario has to be
+        # set on the unit itself. POLICY's own Environment= line is preserved:
+        # systemd accumulates assignments rather than replacing the list.
+        evidence['scenario'] = args.scenario
+        command += ['-p', 'Environment=TOLLGATE_TRIAL_SCENARIO=' + args.scenario]
     command += ['/runtime/bin/python3', '-I', '-B', '/source/systemd_smoke_child.py']
     command += ['--mode', args.mode]
     evidence['command'] = command

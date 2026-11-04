@@ -198,9 +198,19 @@ def main(mode='adversarial'):
     if mode == 'lifecycle':
         private_mount_evidence()
         check_layout()
+        import importlib.util
         import runpy
+        scenario = os.environ.get('TOLLGATE_TRIAL_SCENARIO', 'baseline')
+        print(json.dumps({'managed_scenario': scenario}), flush=True)
+        if scenario != 'baseline':
+            # Single source of truth: the harness's own SCENARIOS tuple. An
+            # unknown scenario must fail loudly here, not silently run baseline.
+            spec = importlib.util.spec_from_file_location('fleet_trial', '/source/tools/fleet_trial.py')
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            assert scenario in module.SCENARIOS, (scenario, module.SCENARIOS)
         runpy.run_path('/source/tools/fleet_trial.py', run_name='__main__')
-        print(json.dumps({'probe': 'PASS', 'mode': mode}), flush=True)
+        print(json.dumps({'probe': 'PASS', 'mode': mode, 'scenario': scenario}), flush=True)
         time.sleep(3)
         return
     if mode == 'parser':

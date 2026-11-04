@@ -1,0 +1,333 @@
+{
+  "unit": "prta-smoke-5fab63fa63fe.service",
+  "root": "/var/lib/prta-smoke-5fab63fa63fe",
+  "policy": {
+    "PrivateNetwork": "yes",
+    "PrivateDevices": "yes",
+    "PrivateTmp": "yes",
+    "ProtectHome": "yes",
+    "ProtectSystem": "strict",
+    "ProtectControlGroups": "yes",
+    "ProtectKernelTunables": "yes",
+    "ProtectKernelModules": "yes",
+    "ProtectKernelLogs": "yes",
+    "ProtectProc": "invisible",
+    "ProcSubset": "pid",
+    "NoNewPrivileges": "yes",
+    "CapabilityBoundingSet": "",
+    "AmbientCapabilities": "",
+    "RestrictSUIDSGID": "yes",
+    "RestrictNamespaces": "yes",
+    "Delegate": "no",
+    "RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6",
+    "User": "65534",
+    "Group": "65534",
+    "SupplementaryGroups": "",
+    "KillMode": "control-group",
+    "SendSIGKILL": "yes",
+    "TimeoutStopSec": "5s",
+    "RuntimeMaxSec": "60s",
+    "Restart": "no",
+    "WorkingDirectory": "/work",
+    "ReadWritePaths": "/work",
+    "TemporaryFileSystem": "/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534",
+    "StandardInput": "null",
+    "StandardOutput": "journal",
+    "StandardError": "journal",
+    "SetLoginEnvironment": "no",
+    "Environment": "PATH=/runtime/bin LANG=C",
+    "TasksMax": "96",
+    "MemoryMax": "256M"
+  },
+  "cleanup": "cgroup_removed",
+  "frozen_manifest_verified": true,
+  "scenario": "renewal_expire",
+  "command": [
+    "sudo",
+    "-n",
+    "/usr/bin/systemd-run",
+    "--system",
+    "--unit=prta-smoke-5fab63fa63fe.service",
+    "--service-type=exec",
+    "-p",
+    "PrivateNetwork=yes",
+    "-p",
+    "PrivateDevices=yes",
+    "-p",
+    "PrivateTmp=yes",
+    "-p",
+    "ProtectHome=yes",
+    "-p",
+    "ProtectSystem=strict",
+    "-p",
+    "ProtectControlGroups=yes",
+    "-p",
+    "ProtectKernelTunables=yes",
+    "-p",
+    "ProtectKernelModules=yes",
+    "-p",
+    "ProtectKernelLogs=yes",
+    "-p",
+    "ProtectProc=invisible",
+    "-p",
+    "ProcSubset=pid",
+    "-p",
+    "NoNewPrivileges=yes",
+    "-p",
+    "CapabilityBoundingSet=",
+    "-p",
+    "AmbientCapabilities=",
+    "-p",
+    "RestrictSUIDSGID=yes",
+    "-p",
+    "RestrictNamespaces=yes",
+    "-p",
+    "Delegate=no",
+    "-p",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+    "-p",
+    "User=65534",
+    "-p",
+    "Group=65534",
+    "-p",
+    "SupplementaryGroups=",
+    "-p",
+    "KillMode=control-group",
+    "-p",
+    "SendSIGKILL=yes",
+    "-p",
+    "TimeoutStopSec=5s",
+    "-p",
+    "RuntimeMaxSec=120s",
+    "-p",
+    "Restart=no",
+    "-p",
+    "WorkingDirectory=/work",
+    "-p",
+    "ReadWritePaths=/work",
+    "-p",
+    "TemporaryFileSystem=/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534",
+    "-p",
+    "StandardInput=null",
+    "-p",
+    "StandardOutput=journal",
+    "-p",
+    "StandardError=journal",
+    "-p",
+    "SetLoginEnvironment=no",
+    "-p",
+    "Environment=PATH=/runtime/bin LANG=C",
+    "-p",
+    "TasksMax=96",
+    "-p",
+    "MemoryMax=256M",
+    "-p",
+    "RemainAfterExit=yes",
+    "-p",
+    "RootDirectory=/var/lib/prta-smoke-5fab63fa63fe",
+    "-p",
+    "Environment=TOLLGATE_TRIAL_SCENARIO=renewal_expire",
+    "/runtime/bin/python3",
+    "-I",
+    "-B",
+    "/source/systemd_smoke_child.py",
+    "--mode",
+    "lifecycle"
+  ],
+  "mode": "lifecycle",
+  "launch": "Running as unit: prta-smoke-5fab63fa63fe.service; invocation ID: b5a5377a836a40a2b55fec14bf7ed3f1\n",
+  "live": "Type=exec\nExitType=main\nRestart=no\nRestartMode=normal\nNotifyAccess=none\nRestartUSec=100ms\nRestartSteps=0\nRestartMaxDelayUSec=infinity\nRestartUSecNext=100ms\nTimeoutStartUSec=1min 30s\nTimeoutStopUSec=5s\nTimeoutAbortUSec=5s\nTimeoutStartFailureMode=terminate\nTimeoutStopFailureMode=terminate\nRuntimeMaxUSec=2min\nRuntimeRandomizedExtraUSec=0\nWatchdogUSec=0\nWatchdogTimestampMonotonic=0\nRootDirectoryStartOnly=no\nRemainAfterExit=yes\nGuessMainPID=yes\nMainPID=57604\nControlPID=0\nFileDescriptorStoreMax=0\nNFileDescriptorStore=0\nFileDescriptorStorePreserve=restart\nStatusErrno=0\nResult=success\nReloadResult=success\nCleanResult=success\nUID=65534\nGID=65534\nNRestarts=0\nOOMPolicy=stop\nReloadSignal=1\nExecMainStartTimestamp=Wed 2026-11-04 02:59:35 CET\nExecMainStartTimestampMonotonic=2051581215\nExecMainExitTimestampMonotonic=0\nExecMainPID=57604\nExecMainCode=0\nExecMainStatus=0\nExecStart={ path=/runtime/bin/python3 ; argv[]=/runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode lifecycle ; ignore_errors=no ; start_time=[Wed 2026-11-04 02:59:35 CET] ; stop_time=[n/a] ; pid=57604 ; code=(null) ; status=0/0 }\nExecStartEx={ path=/runtime/bin/python3 ; argv[]=/runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode lifecycle ; flags= ; start_time=[Wed 2026-11-04 02:59:35 CET] ; stop_time=[n/a] ; pid=57604 ; code=(null) ; status=0/0 }\nSlice=system.slice\nControlGroup=/system.slice/prta-smoke-5fab63fa63fe.service\nControlGroupId=84501\nMemoryCurrent=2531328\nMemoryPeak=2531328\nMemorySwapCurrent=0\nMemorySwapPeak=0\nMemoryZSwapCurrent=0\nMemoryAvailable=265904128\nCPUUsageNSec=33825000\nEffectiveCPUs=0-7\nEffectiveMemoryNodes=0\nTasksCurrent=1\nIPIngressBytes=[no data]\nIPIngressPackets=[no data]\nIPEgressBytes=[no data]\nIPEgressPackets=[no data]\nIOReadBytes=[not set]\nIOReadOperations=[not set]\nIOWriteBytes=[not set]\nIOWriteOperations=[not set]\nDelegate=no\nCPUAccounting=yes\nCPUWeight=[not set]\nStartupCPUWeight=[not set]\nCPUShares=[not set]\nStartupCPUShares=[not set]\nCPUQuotaPerSecUSec=infinity\nCPUQuotaPeriodUSec=infinity\nIOAccounting=no\nIOWeight=[not set]\nStartupIOWeight=[not set]\nBlockIOAccounting=no\nBlockIOWeight=[not set]\nStartupBlockIOWeight=[not set]\nMemoryAccounting=yes\nDefaultMemoryLow=0\nDefaultStartupMemoryLow=0\nDefaultMemoryMin=0\nMemoryMin=0\nMemoryLow=0\nStartupMemoryLow=0\nMemoryHigh=infinity\nStartupMemoryHigh=infinity\nMemoryMax=268435456\nStartupMemoryMax=infinity\nMemorySwapMax=infinity\nStartupMemorySwapMax=infinity\nMemoryZSwapMax=infinity\nStartupMemoryZSwapMax=infinity\nMemoryLimit=infinity\nDevicePolicy=closed\nTasksAccounting=yes\nTasksMax=96\nIPAccounting=no\nManagedOOMSwap=auto\nManagedOOMMemoryPressure=auto\nManagedOOMMemoryPressureLimit=0\nManagedOOMPreference=none\nMemoryPressureWatch=auto\nMemoryPressureThresholdUSec=200ms\nCoredumpReceive=no\nEnvironment=PATH=/runtime/bin LANG=C TOLLGATE_TRIAL_SCENARIO=renewal_expire\nUMask=0022\nLimitCPU=infinity\nLimitCPUSoft=infinity\nLimitFSIZE=infinity\nLimitFSIZESoft=infinity\nLimitDATA=infinity\nLimitDATASoft=infinity\nLimitSTACK=infinity\nLimitSTACKSoft=8388608\nLimitCORE=infinity\nLimitCORESoft=0\nLimitRSS=infinity\nLimitRSSSoft=infinity\nLimitNOFILE=524288\nLimitNOFILESoft=1024\nLimitAS=infinity\nLimitASSoft=infinity\nLimitNPROC=22437\nLimitNPROCSoft=22437\nLimitMEMLOCK=8388608\nLimitMEMLOCKSoft=8388608\nLimitLOCKS=infinity\nLimitLOCKSSoft=infinity\nLimitSIGPENDING=22437\nLimitSIGPENDINGSoft=22437\nLimitMSGQUEUE=819200\nLimitMSGQUEUESoft=819200\nLimitNICE=0\nLimitNICESoft=0\nLimitRTPRIO=0\nLimitRTPRIOSoft=0\nLimitRTTIME=infinity\nLimitRTTIMESoft=infinity\nWorkingDirectory=/work\nRootDirectory=/var/lib/prta-smoke-5fab63fa63fe\nRootEphemeral=no\nOOMScoreAdjust=0\nCoredumpFilter=0x33\nNice=0\nIOSchedulingClass=2\nIOSchedulingPriority=4\nCPUSchedulingPolicy=0\nCPUSchedulingPriority=0\nCPUAffinityFromNUMA=no\nNUMAPolicy=n/a\nTimerSlackNSec=50000\nCPUSchedulingResetOnFork=no\nNonBlocking=no\nStandardInput=null\nStandardOutput=journal\nStandardError=journal\nTTYReset=no\nTTYVHangup=no\nTTYVTDisallocate=no\nSyslogPriority=30\nSyslogLevelPrefix=yes\nSyslogLevel=6\nSyslogFacility=3\nLogLevelMax=-1\nLogRateLimitIntervalUSec=0\nLogRateLimitBurst=0\nSecureBits=0\nUser=65534\nGroup=65534\nDynamicUser=no\nSetLoginEnvironment=no\nRemoveIPC=no\nReadWritePaths=/work\nPrivateTmp=yes\nPrivateDevices=yes\nProtectClock=no\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nPrivateNetwork=yes\nPrivateUsers=no\nPrivateMounts=no\nPrivateIPC=no\nProtectHome=yes\nProtectSystem=strict\nSameProcessGroup=no\nUtmpMode=init\nIgnoreSIGPIPE=yes\nNoNewPrivileges=yes\nSystemCallErrorNumber=2147483646\nLockPersonality=no\nRestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX\nRuntimeDirectoryPreserve=no\nRuntimeDirectoryMode=0755\nStateDirectoryMode=0755\nCacheDirectoryMode=0755\nLogsDirectoryMode=0755\nConfigurationDirectoryMode=0755\nTimeoutCleanUSec=infinity\nMemoryDenyWriteExecute=no\nRestrictRealtime=no\nRestrictSUIDSGID=yes\nRestrictNamespaces=yes\nTemporaryFileSystem=/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534\nMountAPIVFS=yes\nKeyringMode=private\nProtectProc=invisible\nProcSubset=pid\nProtectHostname=no\nMemoryKSM=no\nRootImagePolicy=root=verity+signed+encrypted+unprotected+absent:usr=verity+signed+encrypted+unprotected+absent:home=encrypted+unprotected+absent:srv=encrypted+unprotected+absent:tmp=encrypted+unprotected+absent:var=encrypted+unprotected+absent\nMountImagePolicy=root=verity+signed+encrypted+unprotected+absent:usr=verity+signed+encrypted+unprotected+absent:home=encrypted+unprotected+absent:srv=encrypted+unprotected+absent:tmp=encrypted+unprotected+absent:var=encrypted+unprotected+absent\nExtensionImagePolicy=root=verity+signed+encrypted+unprotected+absent:usr=verity+signed+encrypted+unprotected+absent:home=encrypted+unprotected+absent:srv=encrypted+unprotected+absent:tmp=encrypted+unprotected+absent:var=encrypted+unprotected+absent\nKillMode=control-group\nKillSignal=15\nRestartKillSignal=15\nFinalKillSignal=9\nSendSIGKILL=yes\nSendSIGHUP=no\nWatchdogSignal=6\nId=prta-smoke-5fab63fa63fe.service\nNames=prta-smoke-5fab63fa63fe.service\nRequires=-.mount sysinit.target system.slice\nWants=tmp.mount\nConflicts=shutdown.target\nBefore=shutdown.target\nAfter=-.mount systemd-tmpfiles-setup.service systemd-journald.socket tmp.mount sysinit.target system.slice basic.target\nRequiresMountsFor=/var/lib/prta-smoke-5fab63fa63fe /var/tmp /work\nDescription=/runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode lifecycle\nLoadState=loaded\nActiveState=active\nFreezerState=running\nSubState=running\nFragmentPath=/run/systemd/transient/prta-smoke-5fab63fa63fe.service\nUnitFileState=transient\nUnitFilePreset=enabled\nStateChangeTimestamp=Wed 2026-11-04 02:59:35 CET\nStateChangeTimestampMonotonic=2051610104\nInactiveExitTimestamp=Wed 2026-11-04 02:59:35 CET\nInactiveExitTimestampMonotonic=2051581457\nActiveEnterTimestamp=Wed 2026-11-04 02:59:35 CET\nActiveEnterTimestampMonotonic=2051610104\nActiveExitTimestampMonotonic=0\nInactiveEnterTimestampMonotonic=0\nCanStart=yes\nCanStop=yes\nCanReload=no\nCanIsolate=no\nCanFreeze=yes\nStopWhenUnneeded=no\nRefuseManualStart=no\nRefuseManualStop=no\nAllowIsolate=no\nDefaultDependencies=yes\nSurviveFinalKillSignal=no\nOnSuccessJobMode=fail\nOnFailureJobMode=replace\nIgnoreOnIsolate=no\nNeedDaemonReload=no\nJobTimeoutUSec=infinity\nJobRunningTimeoutUSec=infinity\nJobTimeoutAction=none\nConditionResult=yes\nAssertResult=yes\nConditionTimestamp=Wed 2026-11-04 02:59:35 CET\nConditionTimestampMonotonic=2051566783\nAssertTimestamp=Wed 2026-11-04 02:59:35 CET\nAssertTimestampMonotonic=2051566785\nTransient=yes\nPerpetual=no\nStartLimitIntervalUSec=10s\nStartLimitBurst=5\nStartLimitAction=none\nFailureAction=none\nSuccessAction=none\nInvocationID=b5a5377a836a40a2b55fec14bf7ed3f1\nCollectMode=inactive\n",
+  "live_cgroup_events": "populated 1\nfrozen 0\n",
+  "live_recursive_procs": {
+    "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+  },
+  "live_samples": [
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57669\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57669\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57669\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57669\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57669\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57689\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57689\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57689\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57689\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57689\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57728\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57728\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57728\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57728\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57728\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57728\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57746\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57746\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57746\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57746\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n57746\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n57715\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n57648\n57708\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-5fab63fa63fe.service/cgroup.procs": "57604\n"
+    }
+  ],
+  "result": "Result=success\nExecMainStartTimestampMonotonic=2051581215\nExecMainExitTimestampMonotonic=2063929890\nExecMainPID=57604\nExecMainCode=1\nExecMainStatus=0\nLoadState=loaded\nActiveState=active\nSubState=exited\nInvocationID=b5a5377a836a40a2b55fec14bf7ed3f1\n",
+  "terminal_invocation": "b5a5377a836a40a2b55fec14bf7ed3f1",
+  "stop": "",
+  "journal": "Nov 04 02:59:35.941504 x280 systemd[1]: Starting prta-smoke-5fab63fa63fe.service - /runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode lifecycle...\nNov 04 02:59:35.970153 x280 systemd[1]: Started prta-smoke-5fab63fa63fe.service - /runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode lifecycle.\nNov 04 02:59:37.076908 x280 python3[57604]: {\"identity\": {\"uid\": [65534, 65534, 65534], \"gid\": [65534, 65534, 65534], \"groups\": [65534]}, \"capabilities\": {\"CapInh\": \"0000000000000000\", \"CapPrm\": \"0000000000000000\", \"CapEff\": \"0000000000000000\", \"CapBnd\": \"0000000000000000\", \"CapAmb\": \"0000000000000000\", \"NoNewPrivs\": \"1\"}}\nNov 04 02:59:37.077429 x280 python3[57604]: {\"home_denials\": {\"/home/c08r4d0r\": \"EACCES\", \"/root/.ssh\": \"EACCES\"}}\nNov 04 02:59:37.078797 x280 python3[57604]: {\"reached\": \"home and executable exclusions\"}\nNov 04 02:59:37.079405 x280 python3[57604]: {\"reached\": \"serial/environment exclusions, read-only source/runtime, loopback roundtrip\"}\nNov 04 02:59:37.079621 x280 python3[57604]: {\"mountinfo\": \"525 120 252:0 /var/lib/prta-smoke-5fab63fa63fe / ro,nosuid,relatime shared:403 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n526 525 0:48 / /dev ro,nosuid,noexec shared:438 - tmpfs tmpfs rw,size=4096k,nr_inodes=65536,mode=755,inode64\\n527 526 0:27 / /dev/pts rw,nosuid,noexec,relatime shared:439 master:3 - devpts devpts rw,gid=5,mode=620,ptmxmode=000\\n528 526 0:30 / /dev/shm rw,nosuid,nodev shared:440 master:4 - tmpfs tmpfs rw,inode64\\n529 526 0:23 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:441 master:16 - mqueue mqueue rw\\n530 526 0:36 / /dev/hugepages rw,nosuid,nodev,relatime shared:442 master:15 - hugetlbfs hugetlbfs rw,pagesize=2M\\n531 525 0:28 /systemd/inaccessible/dir /home ro,nosuid,nodev,noexec,relatime shared:444 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n532 525 0:49 / /proc rw,nosuid,nodev,noexec,relatime shared:445 - proc proc rw,hidepid=invisible,subset=pid\\n533 525 0:28 /systemd/inaccessible/dir /root ro,nosuid,nodev,noexec,relatime shared:446 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n534 525 0:50 / /run rw,nosuid,relatime shared:447 - tmpfs tmpfs rw,inode64\\n535 534 0:28 /systemd/propagate/.os-release-stage /run/host/.os-release-stage ro,nosuid,nodev,noexec,relatime shared:448 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n536 534 0:28 /systemd/propagate/prta-smoke-5fab63fa63fe.service /run/systemd/incoming ro,nosuid,nodev,noexec,relatime master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n537 525 0:59 / /sys ro,nosuid,nodev,noexec,relatime shared:450 - sysfs sysfs rw\\n538 537 0:29 / /sys/firmware/efi/efivars ro,nosuid,nodev,noexec,relatime shared:451 master:8 - efivarfs efivarfs rw\\n539 537 0:34 / /sys/fs/bpf ro,nosuid,nodev,noexec,relatime shared:452 master:12 - bpf bpf rw,mode=700\\n540 537 0:32 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime shared:453 master:10 - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot\\n541 537 0:37 / /sys/fs/fuse/connections ro,nosuid,nodev,noexec,relatime shared:454 master:19 - fusectl fusectl rw\\n542 537 0:33 / /sys/fs/pstore ro,nosuid,nodev,noexec,relatime shared:455 master:11 - pstore none rw\\n543 537 0:21 / /sys/kernel/config ro,nosuid,nodev,noexec,relatime shared:456 master:20 - configfs configfs rw\\n544 537 0:9 / /sys/kernel/debug ro,nosuid,nodev,noexec,relatime shared:457 master:17 - debugfs debugfs rw\\n545 544 0:14 / /sys/kernel/debug/tracing ro,nosuid,nodev,noexec,relatime shared:458 master:188 - tracefs tracefs rw\\n645 537 0:8 / /sys/kernel/security ro,nosuid,nodev,noexec,relatime shared:459 master:9 - securityfs securityfs rw\\n663 537 0:14 / /sys/kernel/tracing ro,nosuid,nodev,noexec,relatime shared:460 master:18 - tracefs tracefs rw\\n698 525 252:0 /tmp/systemd-private-8dfbebe969634bc9bbeca5ded8869f89-prta-smoke-5fab63fa63fe.service-qqAYLx/tmp /tmp rw,nosuid,relatime shared:461 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n699 525 252:0 /var/tmp/systemd-private-8dfbebe969634bc9bbeca5ded8869f89-prta-smoke-5fab63fa63fe.service-IFyrHY/tmp /var/tmp rw,nosuid,relatime shared:462 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n707 525 0:60 / /work rw,nosuid,nodev,noexec shared:463 - tmpfs tmpfs rw,size=32768k,nr_inodes=409600,mode=700,uid=65534,gid=65534,inode64\\n\", \"statvfs\": {\"/\": {\"flags\": 4099, \"bytes\": 264485994496}, \"/work\": {\"flags\": 14, \"bytes\": 33554432}, \"/source\": {\"flags\": 4099, \"bytes\": 264485994496}, \"/runtime\": {\"flags\": 4099, \"bytes\": 264485994496}}}\nNov 04 02:59:37.083675 x280 python3[57604]: {\"work_transaction\": \"PASS\", \"results_write_read_unlink\": \"PASS\", \"sqlite_commit_rollback_wal_checkpoint\": \"PASS\"}\nNov 04 02:59:37.083918 x280 python3[57604]: {\"managed_scenario\": \"renewal_expire\"}\nNov 04 02:59:37.145918 x280 python3[57604]: {\"scenario\": \"renewal_expire\", \"request\": \"start\"}\nNov 04 02:59:39.480125 x280 python3[57604]: {\"argv\": [\"/runtime/bin/python3\", \"-I\", \"-B\", \"/runtime/bin/labgrid-client\", \"-x\", \"127.0.0.1:20408\", \"-p\", \"empty\", \"create\"], \"rc\": 0, \"stdout\": \"\", \"stderr\": \"\"}\nNov 04 02:59:40.582538 x280 python3[57604]: {\"argv\": [\"/runtime/bin/python3\", \"-B\", \"/source/scripts/run-profile.py\", \"--profile\", \"/work/trial\", \"--no-render\", \"--fleet\", \"trial_FLEET_A\", \"--resource\", \"empty\", \"--lane\", \"lane\", \"--authority-store\", \"/work/authority.db\", \"--demand-vcpus\", \"1\", \"--demand-ram-mib\", \"64\", \"--demand-disk-mib\", \"1\", \"--demand-inodes\", \"1\", \"--lease-ttl\", \"6.0\", \"--fleet-manifest\", \"/work/authorized.yaml\", \"--run-dir\", \"/work/renewal_expire\", \"--no-dut\", \"--preflight=off\", \"-c\", \"/dev/null\", \"-p\", \"pytest_metadata.plugin\", \"-p\", \"pytest_html.plugin\", \"-p\", \"no:cacheprovider\", \"-s\"], \"watched\": true, \"run_id\": \"trial-e3f36ccf\"}\nNov 04 02:59:43.103672 x280 python3[57604]: {\"scenario\": \"renewal_expire\", \"action\": \"expire\", \"run_id\": \"trial-e3f36ccf\", \"expired\": [\"trial-e3f36ccf\"]}\nNov 04 02:59:45.125432 x280 python3[57604]: {\"argv\": [\"/runtime/bin/python3\", \"-B\", \"/source/scripts/run-profile.py\", \"--profile\", \"/work/trial\", \"--no-render\", \"--fleet\", \"trial_FLEET_A\", \"--resource\", \"empty\", \"--lane\", \"lane\", \"--authority-store\", \"/work/authority.db\", \"--demand-vcpus\", \"1\", \"--demand-ram-mib\", \"64\", \"--demand-disk-mib\", \"1\", \"--demand-inodes\", \"1\", \"--lease-ttl\", \"6.0\", \"--fleet-manifest\", \"/work/authorized.yaml\", \"--run-dir\", \"/work/renewal_expire\", \"--no-dut\", \"--preflight=off\", \"-c\", \"/dev/null\", \"-p\", \"pytest_metadata.plugin\", \"-p\", \"pytest_html.plugin\", \"-p\", \"no:cacheprovider\", \"-s\"], \"rc\": 77, \"stdout\": \"==> Profile:    trial\\n==> Runner:     pytest\\n==> Run ID:     trial-e3f36ccf\\n==> Results:    /work/renewal_expire\\n==> Git SHA:    unknown\\n==> Bound:     lane empty -> place empty @ 127.0.0.1:20408 (owner trial/prta-trial-e3f36ccf-8e131fec7c8414ea, origin explicit-place)\\n==> Reserved:  lane fence=1 state=reserved\\n==> Command: /runtime/bin/python3 -m pytest --junitxml=/work/renewal_expire/raw/venue/junit.xml --html=/work/renewal_expire/raw/venue/report.html --self-contained-html --results=/work/renewal_expire /source/tests/test_venue_lifecycle.py --no-dut --preflight=off -c /dev/null -p pytest_metadata.plugin -p pytest_html.plugin -p no:cacheprovider -s\\n==> CWD:     /source\\n==> Log:     /work/renewal_expire/raw/venue/output.log\\n============================= test session starts ==============================\\nplatform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0\\nrootdir: /dev\\nconfigfile: null\\ncollected 1 item\\n\\n../dev 01:59:42 [tollgate.conftest] fleet claim handoff honoured: place 'empty' claimed by 'trial/prta-trial-e3f36ccf-8e131fec7c8414ea' (run 'trial-e3f36ccf')\\n01:59:43 [tollgate.conftest] labgrid venue: acquired place empty + hardware lock (explicit-place)\\n\", \"stderr\": \"==> SUPERVISION FAILED: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)\\n==> The child's process group was terminated; this is not a test verdict.\\n==> RELEASE UNCONFIRMED: release_unconfirmed: allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded\\n==> The lane stays occupied until this is reconciled.\\n==> WARNING: lane not released cleanly (release_raised: release raised AuthorityLost: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)); capacity remains consumed.\\n==> Supervision exit: 77\\n\", \"renewals_observed\": 1, \"action_fired\": true, \"started_at\": 1793757580.582522, \"exited_at\": 1793757585.1252162, \"samples\": [{\"t\": 1793757580.5831559, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.6839242, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.7845812, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.8851886, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.9858267, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757581.0864449, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.187349, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.2882087, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.3890924, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.489916, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.5907717, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.6916127, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.7924647, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.89329, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.9941454, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.0949516, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.1958723, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.2966073, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.3972824, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.4979203, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.598852, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.6995332, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.8002343, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.900946, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757583.0016491, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757583.1023664, \"expires_at\": 1793757593.0142689, \"state\": \"active\"}, {\"t\": 1793757583.2037153, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.3048952, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.4056094, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.506216, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.6069105, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.7077155, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.808427, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.9091027, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.0097818, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.1104953, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.2111824, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.3121014, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.4131162, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.5149906, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.6171908, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.7192624, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.820196, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.9209573, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757585.0216305, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}]}\nNov 04 02:59:45.127097 x280 python3[57604]: {\"scenario\": \"renewal_expire\", \"run_id\": \"trial-e3f36ccf\", \"action_fired\": true, \"exit_code\": 77, \"release_state\": \"cleanup_pending\", \"marker_seen\": false, \"duration_s\": 4.542694330215454, \"child_sleep_s\": 30.0, \"renewals_observed\": 1, \"verdict\": {\"exit_is_supervision\": true, \"child_terminated\": true, \"lane_not_cleanreleased\": true, \"renewed_before_loss\": true, \"duration_s\": 4.542694330215454, \"child_sleep_s\": 30.0}, \"stragglers\": [], \"release\": {\"run_id\": \"trial-e3f36ccf\", \"state\": \"cleanup_pending\", \"reason\": \"release_raised\", \"detail\": \"release raised AuthorityLost: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)\", \"place\": \"empty\", \"owner_after\": null, \"clean\": false, \"review\": true}, \"run_states\": [\"quarantined\"], \"stderr\": \"==> SUPERVISION FAILED: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)\\n==> The child's process group was terminated; this is not a test verdict.\\n==> RELEASE UNCONFIRMED: release_unconfirmed: allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded\\n==> The lane stays occupied until this is reconciled.\\n==> WARNING: lane not released cleanly (release_raised: release raised AuthorityLost: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)); capacity remains consumed.\\n==> Supervision exit: 77\\n\"}\nNov 04 02:59:45.127097 x280 python3[57604]: {\"lifecycle\": \"PASS\", \"scenario\": \"renewal_expire\"}\nNov 04 02:59:45.190843 x280 python3[57604]: {\"coordinator_log\": \"INFO:root:loaded 0 place(s)\\nINFO:root:Module grpcio-channelz not available\\nINFO:root:Coordinator ready\\nlistening on 127.0.0.1:20408\\nINFO:root:client connected: ipv4:127.0.0.1:56872\\nINFO:root:client connected: ipv4:127.0.0.1:56878\\nINFO:root:client connected: ipv4:127.0.0.1:56880\\nINFO:root:client connected: ipv4:127.0.0.1:56890\\nINFO:root:Starting graceful shutdown...\\nINFO:root:Starting graceful shutdown...\\nplacename: \\\"empty\\\"\\n\\nempty: place acquired by trial/prta-trial-e3f36ccf-8e131fec7c8414ea\\n\"}\nNov 04 02:59:45.190965 x280 python3[57604]: {\"probe\": \"PASS\", \"mode\": \"lifecycle\", \"scenario\": \"renewal_expire\"}\nNov 04 02:59:48.538325 x280 systemd[1]: prta-smoke-5fab63fa63fe.service: Deactivated successfully.\nNov 04 02:59:48.538661 x280 systemd[1]: Stopped prta-smoke-5fab63fa63fe.service - /runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode lifecycle.\nNov 04 02:59:48.538956 x280 systemd[1]: prta-smoke-5fab63fa63fe.service: Consumed 8.637s CPU time, 155.4M memory peak, 0B memory swap peak.\n",
+  "invocation_journal": "Nov 04 02:59:37.076908 x280 python3[57604]: {\"identity\": {\"uid\": [65534, 65534, 65534], \"gid\": [65534, 65534, 65534], \"groups\": [65534]}, \"capabilities\": {\"CapInh\": \"0000000000000000\", \"CapPrm\": \"0000000000000000\", \"CapEff\": \"0000000000000000\", \"CapBnd\": \"0000000000000000\", \"CapAmb\": \"0000000000000000\", \"NoNewPrivs\": \"1\"}}\nNov 04 02:59:37.077429 x280 python3[57604]: {\"home_denials\": {\"/home/c08r4d0r\": \"EACCES\", \"/root/.ssh\": \"EACCES\"}}\nNov 04 02:59:37.078797 x280 python3[57604]: {\"reached\": \"home and executable exclusions\"}\nNov 04 02:59:37.079405 x280 python3[57604]: {\"reached\": \"serial/environment exclusions, read-only source/runtime, loopback roundtrip\"}\nNov 04 02:59:37.079621 x280 python3[57604]: {\"mountinfo\": \"525 120 252:0 /var/lib/prta-smoke-5fab63fa63fe / ro,nosuid,relatime shared:403 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n526 525 0:48 / /dev ro,nosuid,noexec shared:438 - tmpfs tmpfs rw,size=4096k,nr_inodes=65536,mode=755,inode64\\n527 526 0:27 / /dev/pts rw,nosuid,noexec,relatime shared:439 master:3 - devpts devpts rw,gid=5,mode=620,ptmxmode=000\\n528 526 0:30 / /dev/shm rw,nosuid,nodev shared:440 master:4 - tmpfs tmpfs rw,inode64\\n529 526 0:23 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:441 master:16 - mqueue mqueue rw\\n530 526 0:36 / /dev/hugepages rw,nosuid,nodev,relatime shared:442 master:15 - hugetlbfs hugetlbfs rw,pagesize=2M\\n531 525 0:28 /systemd/inaccessible/dir /home ro,nosuid,nodev,noexec,relatime shared:444 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n532 525 0:49 / /proc rw,nosuid,nodev,noexec,relatime shared:445 - proc proc rw,hidepid=invisible,subset=pid\\n533 525 0:28 /systemd/inaccessible/dir /root ro,nosuid,nodev,noexec,relatime shared:446 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n534 525 0:50 / /run rw,nosuid,relatime shared:447 - tmpfs tmpfs rw,inode64\\n535 534 0:28 /systemd/propagate/.os-release-stage /run/host/.os-release-stage ro,nosuid,nodev,noexec,relatime shared:448 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n536 534 0:28 /systemd/propagate/prta-smoke-5fab63fa63fe.service /run/systemd/incoming ro,nosuid,nodev,noexec,relatime master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n537 525 0:59 / /sys ro,nosuid,nodev,noexec,relatime shared:450 - sysfs sysfs rw\\n538 537 0:29 / /sys/firmware/efi/efivars ro,nosuid,nodev,noexec,relatime shared:451 master:8 - efivarfs efivarfs rw\\n539 537 0:34 / /sys/fs/bpf ro,nosuid,nodev,noexec,relatime shared:452 master:12 - bpf bpf rw,mode=700\\n540 537 0:32 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime shared:453 master:10 - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot\\n541 537 0:37 / /sys/fs/fuse/connections ro,nosuid,nodev,noexec,relatime shared:454 master:19 - fusectl fusectl rw\\n542 537 0:33 / /sys/fs/pstore ro,nosuid,nodev,noexec,relatime shared:455 master:11 - pstore none rw\\n543 537 0:21 / /sys/kernel/config ro,nosuid,nodev,noexec,relatime shared:456 master:20 - configfs configfs rw\\n544 537 0:9 / /sys/kernel/debug ro,nosuid,nodev,noexec,relatime shared:457 master:17 - debugfs debugfs rw\\n545 544 0:14 / /sys/kernel/debug/tracing ro,nosuid,nodev,noexec,relatime shared:458 master:188 - tracefs tracefs rw\\n645 537 0:8 / /sys/kernel/security ro,nosuid,nodev,noexec,relatime shared:459 master:9 - securityfs securityfs rw\\n663 537 0:14 / /sys/kernel/tracing ro,nosuid,nodev,noexec,relatime shared:460 master:18 - tracefs tracefs rw\\n698 525 252:0 /tmp/systemd-private-8dfbebe969634bc9bbeca5ded8869f89-prta-smoke-5fab63fa63fe.service-qqAYLx/tmp /tmp rw,nosuid,relatime shared:461 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n699 525 252:0 /var/tmp/systemd-private-8dfbebe969634bc9bbeca5ded8869f89-prta-smoke-5fab63fa63fe.service-IFyrHY/tmp /var/tmp rw,nosuid,relatime shared:462 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n707 525 0:60 / /work rw,nosuid,nodev,noexec shared:463 - tmpfs tmpfs rw,size=32768k,nr_inodes=409600,mode=700,uid=65534,gid=65534,inode64\\n\", \"statvfs\": {\"/\": {\"flags\": 4099, \"bytes\": 264485994496}, \"/work\": {\"flags\": 14, \"bytes\": 33554432}, \"/source\": {\"flags\": 4099, \"bytes\": 264485994496}, \"/runtime\": {\"flags\": 4099, \"bytes\": 264485994496}}}\nNov 04 02:59:37.083675 x280 python3[57604]: {\"work_transaction\": \"PASS\", \"results_write_read_unlink\": \"PASS\", \"sqlite_commit_rollback_wal_checkpoint\": \"PASS\"}\nNov 04 02:59:37.083918 x280 python3[57604]: {\"managed_scenario\": \"renewal_expire\"}\nNov 04 02:59:37.145918 x280 python3[57604]: {\"scenario\": \"renewal_expire\", \"request\": \"start\"}\nNov 04 02:59:39.480125 x280 python3[57604]: {\"argv\": [\"/runtime/bin/python3\", \"-I\", \"-B\", \"/runtime/bin/labgrid-client\", \"-x\", \"127.0.0.1:20408\", \"-p\", \"empty\", \"create\"], \"rc\": 0, \"stdout\": \"\", \"stderr\": \"\"}\nNov 04 02:59:40.582538 x280 python3[57604]: {\"argv\": [\"/runtime/bin/python3\", \"-B\", \"/source/scripts/run-profile.py\", \"--profile\", \"/work/trial\", \"--no-render\", \"--fleet\", \"trial_FLEET_A\", \"--resource\", \"empty\", \"--lane\", \"lane\", \"--authority-store\", \"/work/authority.db\", \"--demand-vcpus\", \"1\", \"--demand-ram-mib\", \"64\", \"--demand-disk-mib\", \"1\", \"--demand-inodes\", \"1\", \"--lease-ttl\", \"6.0\", \"--fleet-manifest\", \"/work/authorized.yaml\", \"--run-dir\", \"/work/renewal_expire\", \"--no-dut\", \"--preflight=off\", \"-c\", \"/dev/null\", \"-p\", \"pytest_metadata.plugin\", \"-p\", \"pytest_html.plugin\", \"-p\", \"no:cacheprovider\", \"-s\"], \"watched\": true, \"run_id\": \"trial-e3f36ccf\"}\nNov 04 02:59:43.103672 x280 python3[57604]: {\"scenario\": \"renewal_expire\", \"action\": \"expire\", \"run_id\": \"trial-e3f36ccf\", \"expired\": [\"trial-e3f36ccf\"]}\nNov 04 02:59:45.125432 x280 python3[57604]: {\"argv\": [\"/runtime/bin/python3\", \"-B\", \"/source/scripts/run-profile.py\", \"--profile\", \"/work/trial\", \"--no-render\", \"--fleet\", \"trial_FLEET_A\", \"--resource\", \"empty\", \"--lane\", \"lane\", \"--authority-store\", \"/work/authority.db\", \"--demand-vcpus\", \"1\", \"--demand-ram-mib\", \"64\", \"--demand-disk-mib\", \"1\", \"--demand-inodes\", \"1\", \"--lease-ttl\", \"6.0\", \"--fleet-manifest\", \"/work/authorized.yaml\", \"--run-dir\", \"/work/renewal_expire\", \"--no-dut\", \"--preflight=off\", \"-c\", \"/dev/null\", \"-p\", \"pytest_metadata.plugin\", \"-p\", \"pytest_html.plugin\", \"-p\", \"no:cacheprovider\", \"-s\"], \"rc\": 77, \"stdout\": \"==> Profile:    trial\\n==> Runner:     pytest\\n==> Run ID:     trial-e3f36ccf\\n==> Results:    /work/renewal_expire\\n==> Git SHA:    unknown\\n==> Bound:     lane empty -> place empty @ 127.0.0.1:20408 (owner trial/prta-trial-e3f36ccf-8e131fec7c8414ea, origin explicit-place)\\n==> Reserved:  lane fence=1 state=reserved\\n==> Command: /runtime/bin/python3 -m pytest --junitxml=/work/renewal_expire/raw/venue/junit.xml --html=/work/renewal_expire/raw/venue/report.html --self-contained-html --results=/work/renewal_expire /source/tests/test_venue_lifecycle.py --no-dut --preflight=off -c /dev/null -p pytest_metadata.plugin -p pytest_html.plugin -p no:cacheprovider -s\\n==> CWD:     /source\\n==> Log:     /work/renewal_expire/raw/venue/output.log\\n============================= test session starts ==============================\\nplatform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.7.0\\nrootdir: /dev\\nconfigfile: null\\ncollected 1 item\\n\\n../dev 01:59:42 [tollgate.conftest] fleet claim handoff honoured: place 'empty' claimed by 'trial/prta-trial-e3f36ccf-8e131fec7c8414ea' (run 'trial-e3f36ccf')\\n01:59:43 [tollgate.conftest] labgrid venue: acquired place empty + hardware lock (explicit-place)\\n\", \"stderr\": \"==> SUPERVISION FAILED: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)\\n==> The child's process group was terminated; this is not a test verdict.\\n==> RELEASE UNCONFIRMED: release_unconfirmed: allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded\\n==> The lane stays occupied until this is reconciled.\\n==> WARNING: lane not released cleanly (release_raised: release raised AuthorityLost: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)); capacity remains consumed.\\n==> Supervision exit: 77\\n\", \"renewals_observed\": 1, \"action_fired\": true, \"started_at\": 1793757580.582522, \"exited_at\": 1793757585.1252162, \"samples\": [{\"t\": 1793757580.5831559, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.6839242, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.7845812, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.8851886, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757580.9858267, \"expires_at\": null, \"state\": \"missing\", \"error\": \"UnknownRun\"}, {\"t\": 1793757581.0864449, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.187349, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.2882087, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.3890924, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.489916, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.5907717, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.6916127, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.7924647, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.89329, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757581.9941454, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.0949516, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.1958723, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.2966073, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.3972824, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.4979203, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.598852, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.6995332, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.8002343, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757582.900946, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757583.0016491, \"expires_at\": 1793757587.0142689, \"state\": \"active\"}, {\"t\": 1793757583.1023664, \"expires_at\": 1793757593.0142689, \"state\": \"active\"}, {\"t\": 1793757583.2037153, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.3048952, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.4056094, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.506216, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.6069105, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.7077155, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.808427, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757583.9091027, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.0097818, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.1104953, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.2111824, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.3121014, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.4131162, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.5149906, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.6171908, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.7192624, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.820196, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757584.9209573, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}, {\"t\": 1793757585.0216305, \"expires_at\": 1793757593.0142689, \"state\": \"quarantined\"}]}\nNov 04 02:59:45.127097 x280 python3[57604]: {\"scenario\": \"renewal_expire\", \"run_id\": \"trial-e3f36ccf\", \"action_fired\": true, \"exit_code\": 77, \"release_state\": \"cleanup_pending\", \"marker_seen\": false, \"duration_s\": 4.542694330215454, \"child_sleep_s\": 30.0, \"renewals_observed\": 1, \"verdict\": {\"exit_is_supervision\": true, \"child_terminated\": true, \"lane_not_cleanreleased\": true, \"renewed_before_loss\": true, \"duration_s\": 4.542694330215454, \"child_sleep_s\": 30.0}, \"stragglers\": [], \"release\": {\"run_id\": \"trial-e3f36ccf\", \"state\": \"cleanup_pending\", \"reason\": \"release_raised\", \"detail\": \"release raised AuthorityLost: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)\", \"place\": \"empty\", \"owner_after\": null, \"clean\": false, \"review\": true}, \"run_states\": [\"quarantined\"], \"stderr\": \"==> SUPERVISION FAILED: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)\\n==> The child's process group was terminated; this is not a test verdict.\\n==> RELEASE UNCONFIRMED: release_unconfirmed: allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded\\n==> The lane stays occupied until this is reconciled.\\n==> WARNING: lane not released cleanly (release_raised: release raised AuthorityLost: authority_lost: authority refused renewal for 'trial-e3f36ccf': allocation 'trial-e3f36ccf' has been fenced (caller holds fence 1, store holds 2) \\u2014 this claim is superseded \\u2014 child group 57715 terminated (SIGTERM to group 57715; group gone after SIGTERM)); capacity remains consumed.\\n==> Supervision exit: 77\\n\"}\nNov 04 02:59:45.127097 x280 python3[57604]: {\"lifecycle\": \"PASS\", \"scenario\": \"renewal_expire\"}\nNov 04 02:59:45.190843 x280 python3[57604]: {\"coordinator_log\": \"INFO:root:loaded 0 place(s)\\nINFO:root:Module grpcio-channelz not available\\nINFO:root:Coordinator ready\\nlistening on 127.0.0.1:20408\\nINFO:root:client connected: ipv4:127.0.0.1:56872\\nINFO:root:client connected: ipv4:127.0.0.1:56878\\nINFO:root:client connected: ipv4:127.0.0.1:56880\\nINFO:root:client connected: ipv4:127.0.0.1:56890\\nINFO:root:Starting graceful shutdown...\\nINFO:root:Starting graceful shutdown...\\nplacename: \\\"empty\\\"\\n\\nempty: place acquired by trial/prta-trial-e3f36ccf-8e131fec7c8414ea\\n\"}\nNov 04 02:59:45.190965 x280 python3[57604]: {\"probe\": \"PASS\", \"mode\": \"lifecycle\", \"scenario\": \"renewal_expire\"}\n",
+  "staging_removed": true,
+  "final_unit": "LoadState=not-found\n"
+}
