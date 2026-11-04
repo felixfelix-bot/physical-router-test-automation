@@ -888,7 +888,23 @@ class FleetAuthority:
         try:
             conn.execute("BEGIN IMMEDIATE")
             now = self._clock()
+            # Expiry is committed as its OWN transaction, before the decision.
+            #
+            # It used to run inside the decision transaction, and every refusal
+            # below rolls that transaction back — so the sweep was undone by the
+            # very refusal it caused. The lane then still reported the dead
+            # holder as ``active`` with an unchanged fence after a caller had
+            # been told ``lane_quarantined: lease_expired``, and the zombie's
+            # ``(run_id, fence)`` still authenticated ``renew`` and ``complete``.
+            # That is the audit's destructive reassignment inverted: a lease that
+            # expired is not durably dead, so nothing stops the old process.
+            #
+            # Expiry is a wall-clock fact, not a property of who is asking, so it
+            # must not depend on this caller's outcome. A second process that
+            # arrives after this COMMIT sees the quarantine and is refused.
             self._expire_locked(conn, now)
+            conn.execute("COMMIT")
+            conn.execute("BEGIN IMMEDIATE")
 
             if self._meta(conn, _META_NEEDS_RECONCILE) == "1":
                 conn.execute("ROLLBACK")

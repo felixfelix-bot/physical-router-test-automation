@@ -1,3 +1,30 @@
+# Crash/disconnect release proven; authority expiry-rollback bug fixed (2026-11-04)
+
+`crash_run` is the sixth managed scenario. ONE bounded lifecycle service
+(`prta-smoke-229c029979ff.service`, launcher exit 0, `cgroup_removed`,
+`staging_removed true`, manifest v6 re-pinned one-to-one for only
+`tools/fleet_trial.py` + `lib/fleet_authority.py`) proved, from the real SQLite
+store and the real coordinator, all five invariants against a genuine
+`SIGKILL` of the runner's process group (`runner_rc -9`, one venue child left
+alive):
+
+- refused while unexpired: `rc 75 lane_busy: lane concurrency 1/1`
+- after real TTL elapse: `quarantined, fence 2, lease_expired` (never released)
+- second runner then: `rc 75 lane_quarantined: ... (lease_expired)`
+- dead token: `renew/activate/release/abort` all `Fenced`, fence `1 -> 2`
+- ownership after death: dead run's owner, byte-identical; no clean release
+
+The scenario found a REAL engine bug: `try_reserve`'s TTL sweep was rolled back
+by the very refusal it caused, so a crashed runner's lease stayed `active` and
+its token still renewed and released clean. Fixed (sweep commits in its own
+transaction first) and pinned RED-first in
+`tests/unit/test_fleet_authority.py`. 38 doubles in
+`tools/test_fleet_trial_scenarios.py`.
+
+Still unproven: automatic reclamation (none exists — quarantine needs
+`clear_quarantine` after a human verifies the DUT), the last-heartbeat race
+before expiry, the cleanup cgroup/path reuse race, and no hardware/SSH/VM/install.
+
 # Managed lifecycle trial — PASSED end to end (2026-11-04)
 
 One lifecycle-mode `systemd_smoke.py` service on `89036b3`, launcher exit 0.

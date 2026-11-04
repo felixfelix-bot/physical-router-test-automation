@@ -150,5 +150,139 @@ class ContentionDoubles(unittest.TestCase):
         self.assertFalse(self.record(rc_b=0)['refused_before_acquisition'])
 
 
+class CrashReleaseDoubles(unittest.TestCase):
+    """A killed runner must leave a lane quarantined, not free.
+
+    Each double is one *observed fact* replaced by the value that makes the
+    corresponding invariant false, so a regression in the verdict logic fails
+    here before any privileged service runs.
+    """
+
+    def verdict(self, **over):
+        base = dict(
+            state_before_kill='active', expires_at_before_kill=500.0, killed_at=495.0,
+            state_after_expiry='quarantined', lane_quarantined=True,
+            quarantine_reason='lease_expired',
+            reassign_while_unexpired=False, reassign_reason='lane_busy',
+            second_refusal_reason='lane_quarantined', second_rc=75,
+            second_child_exists=False, second_allocation_exists=False,
+            stale_refusals={'renew': 'Fenced', 'activate': 'Fenced',
+                            'release': 'Fenced', 'abort': 'Fenced'},
+            fence_before=2, fence_after=3,
+            owner_after_death='trial/prta-run-a', owner_a='trial/prta-run-a',
+            release_recorded=False, allocations_for_a=True,
+            expiry_events=1, released_events=0,
+        )
+        base.update(over)
+        return module().crash_release_verdict(**base)
+
+    # -- the whole matrix, green -------------------------------------------
+    def test_all_five_invariants_hold_on_the_observed_facts(self):
+        v = self.verdict()
+        for key in ('lease_unexpired_at_kill', 'expired_into_quarantine',
+                    'not_reassignable_while_unexpired', 'second_refused',
+                    'refusal_reason_is_durable', 'fence_advanced',
+                    'stale_token_refused', 'owner_visible_after_death',
+                    'clean_release_not_claimed'):
+            self.assertTrue(v[key], key)
+        module().assert_crash_release(v)
+
+    # -- (a) reassignment while unexpired ----------------------------------
+    def test_a_lane_handed_out_while_unexpired_fails(self):
+        self.assertFalse(self.verdict(reassign_while_unexpired=True)
+                         ['not_reassignable_while_unexpired'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(self.verdict(reassign_while_unexpired=True))
+
+    def test_a_lease_already_expired_at_the_kill_cannot_prove_reassignment(self):
+        """If the TTL had lapsed before the kill, (a) proves nothing."""
+        v = self.verdict(expires_at_before_kill=400.0, killed_at=495.0)
+        self.assertFalse(v['lease_unexpired_at_kill'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+    # -- (b) expiry must quarantine, never free ----------------------------
+    def test_expiry_into_released_is_a_failure(self):
+        v = self.verdict(state_after_expiry='released')
+        self.assertFalse(v['expired_into_quarantine'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+    def test_quarantined_state_without_a_lane_quarantine_row_fails(self):
+        """The allocation state alone is not the exclusion; the lane row is."""
+        self.assertFalse(self.verdict(lane_quarantined=False)['expired_into_quarantine'])
+
+    def test_an_active_lane_after_expiry_fails(self):
+        self.assertFalse(self.verdict(state_after_expiry='active')['expired_into_quarantine'])
+
+    # -- (c) the second runner ---------------------------------------------
+    def test_a_second_runner_that_acquired_is_a_failure(self):
+        self.assertFalse(self.verdict(second_rc=0)['second_refused'])
+
+    def test_a_second_runner_that_wrote_a_child_acquired_something(self):
+        self.assertFalse(self.verdict(second_child_exists=True)['second_refused'])
+
+    def test_a_second_runner_with_an_allocation_acquired_something(self):
+        self.assertFalse(self.verdict(second_allocation_exists=True)['second_refused'])
+
+    def test_a_quarantine_refusal_is_the_durable_reason_the_release_check_needs(self):
+        self.assertTrue(self.verdict(second_refusal_reason='lane_quarantined')['second_refused'])
+
+    def test_a_refusal_with_no_expiry_event_is_not_durable(self):
+        """A refusal nobody can audit after the process exits is not a reason."""
+        v = self.verdict(expiry_events=0)
+        self.assertFalse(v['refusal_reason_is_durable'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+    def test_a_released_event_for_a_killed_runner_is_not_durable(self):
+        self.assertFalse(self.verdict(released_events=1)['refusal_reason_is_durable'])
+
+    def test_a_quarantine_row_with_the_wrong_reason_is_not_lease_expiry(self):
+        """`cleanup_failed` is a different exclusion; it cannot stand in here."""
+        self.assertFalse(self.verdict(quarantine_reason='cleanup_failed')
+                         ['refusal_reason_is_durable'])
+
+    def test_a_busy_refusal_after_ttl_expiry_is_not_the_durable_reason(self):
+        """`lane_busy` means someone else holds it — not that TTL expiry is why."""
+        self.assertFalse(self.verdict(second_refusal_reason='lane_busy')
+                         ['refusal_reason_is_durable'])
+
+    # -- (d) the stale token -----------------------------------------------
+    def test_a_stale_renew_that_was_accepted_fails(self):
+        v = self.verdict(stale_refusals={'renew': 'ACCEPTED', 'activate': 'Fenced',
+                                        'release': 'Fenced', 'abort': 'Fenced'})
+        self.assertFalse(v['stale_token_refused'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+    def test_an_unchanged_fence_generation_fails(self):
+        v = self.verdict(fence_after=2)
+        self.assertFalse(v['fence_advanced'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+    def test_a_silent_stale_release_is_not_evidence(self):
+        """``complete`` on an already-released run returns; that is not a refusal."""
+        self.assertFalse(self.verdict(stale_refusals={})['stale_token_refused'])
+
+    # -- (e) ownership after death -----------------------------------------
+    def test_a_place_that_looks_free_after_the_runner_died_fails(self):
+        v = self.verdict(owner_after_death='')
+        self.assertFalse(v['owner_visible_after_death'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+    def test_another_runs_owner_is_not_the_dead_holders(self):
+        self.assertFalse(self.verdict(owner_after_death='trial/prta-run-b')
+                         ['owner_visible_after_death'])
+
+    def test_a_clean_release_for_a_killed_runner_fails(self):
+        v = self.verdict(release_recorded=True)
+        self.assertFalse(v['clean_release_not_claimed'])
+        with self.assertRaises(AssertionError):
+            module().assert_crash_release(v)
+
+
 if __name__ == '__main__':
     unittest.main()

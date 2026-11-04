@@ -108,7 +108,8 @@ def main():
     #: --mode lifecycle; see docs/managed-lifecycle-scenarios.md. Each scenario
     #: is ONE bounded service — never more, never a DUT.
     parser.add_argument('--scenario', default='baseline',
-                        choices=('baseline', 'renew', 'renewal_fail', 'renewal_expire', 'contention'))
+                        choices=('baseline', 'renew', 'renewal_fail', 'renewal_expire',
+                                 'contention', 'crash_run'))
     args = parser.parse_args()
     assert args.mode == 'lifecycle' or args.scenario == 'baseline', '--scenario requires --mode lifecycle'
     assert int(POLICY['TasksMax']) >= TASKS_MIN, (

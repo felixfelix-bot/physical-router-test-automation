@@ -1,3 +1,75 @@
+# Crash/disconnect release — PASSED, and it found a real authority bug (2026-11-04)
+
+Scenario `crash_run` added to `tools/fleet_trial.py` and run as ONE bounded
+lifecycle service through the same frozen-manifest path as the acceptance trial:
+`prta-smoke-229c029979ff.service`, launcher exit **0**, cleanup `cgroup_removed`,
+`staging_removed: true`, `frozen_manifest_verified: true`.
+Manifest `prta-lifecycle-manifest-v6-crash.json` (6,947 rows) rebuilt one-to-one
+from v5, re-pinning only `/source/tools/fleet_trial.py` and
+`/source/lib/fleet_authority.py`; the launcher re-verified every staged file.
+
+What actually happened, from the `_SYSTEMD_INVOCATION_ID` journal:
+
+- Authorized runner `trial-233f59b1` reached `active fence=1` and held the real
+  coordinator place (`owner trial/prta-trial-233f59b1-5d1452514649036c`). Its
+  venue child was mid-hold (45 s); `child.json` and the `finished` marker were
+  absent, `mid_hold: true`.
+- The harness **SIGKILLed the runner's process group**: `runner_rc: -9`. One
+  process survived (`survivors: [77892]`) — the venue child in its own session,
+  i.e. a live process potentially still on the DUT.
+- (a) A real second runner, same lane, was refused **`rc 75 lane_busy: lane
+  concurrency 1/1`** while the dead holder's lease was unexpired
+  (`expires_at 1793758548.5 > killed_at 1793758531.4`). No allocation for run B.
+- (e) Ownership after death read back **byte-identically** as the dead run's
+  owner — not silently clean, and no `release.json` was ever written.
+- (b) After real TTL elapse (17.8 s wait, no injected clock, no explicit
+  `expire()` call) the store went **`state quarantined, fence 2,
+  quarantine_reason lease_expired`** — never `released`/available.
+- (c) The same second runner, now that the expiry had happened, was refused
+  **`rc 75 lane_quarantined: lane 'lane' is quarantined (lease_expired) until
+  its previous holder is fenced`**, with no child record and no allocation. Durable
+  in the store too: `expiry_events: 1`, `released_events: 0`.
+- (d) The dead holder's own `(run_id, fence=1)` replayed against the real store:
+  **`renew: Fenced, activate: Fenced, release: Fenced, abort: Fenced`**, against
+  `store_fence: 2`. The fencing generation moved `1 -> 2`.
+
+## The bug this found (engine, not harness)
+
+`FleetAuthority.try_reserve` ran the TTL sweep inside the decision transaction
+and rolled it back on the `lane_quarantined` refusal. The refusal therefore
+undid its own cause: the store still said `active, fence 1`, no quarantine row
+existed, and the crashed runner's token still **renewed** and **released
+clean**. Verbatim from the failing service (v2):
+
+```
+{"phase": "after_expiry", "store_state": "active", "store_fence": 1,
+ "lane_quarantined": false, "quarantine_reason": ""}
+{"phase": "stale_transitions", "outcomes": {"renew": "ACCEPTED",
+ "activate": "NotGranted", "release": "ACCEPTED", "abort": "NotGranted"}}
+{"phase": "store_events", "events": [..., {"kind": "released",
+ "detail": "trial: zombie release"}]}
+```
+
+Fixed by committing the sweep in its own transaction before the decision, so
+expiry is a wall-clock fact rather than a property of who is asking. Pinned
+RED-first by
+`tests/unit/test_fleet_authority.py::TestExpiry::test_ttl_expiry_is_durable_even_when_the_sweep_refuses_the_caller`
+(fails on the old code at `state is QUARANTINED`).
+
+Doubles: 20 new RED-first tests in `tools/test_fleet_trial_scenarios.py` (38
+total there), one per observed fact that would make an invariant false; RED
+proven by mutating the verdict helper (`4 failed`) and by reverting the engine
+fix (`1 failed`).
+
+Evidence: `evidence/managed-runner-trial/scenario-crash_run/{evidence,launcher.log}.json/log`;
+raw launcher `~/reports/reviews/prta-lifecycle-crash-v3.log`, manifest
+`~/reports/reviews/prta-lifecycle-manifest-v6-crash.json`
+(sha256 `0e0716bd…9e5`).
+
+Not claimed: no automatic reclamation (a human/`clear_quarantine` is still
+required, so a crash costs capacity until someone acts); no test of the last
+heartbeat race before expiry; no hardware, SSH, VM or install.
+
 # Managed lifecycle trial — PASSED (2026-11-04, supersedes the failure below)
 
 Same harness, same isolation, `HEAD 89036b3`. One service

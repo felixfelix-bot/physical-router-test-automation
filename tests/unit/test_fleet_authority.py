@@ -356,6 +356,40 @@ class TestExpiry:
         assert not nxt.granted
         assert nxt.reason == "lane_quarantined"
 
+    def test_ttl_expiry_is_durable_even_when_the_sweep_refuses_the_caller(self, authority):
+        """The expiry that causes a refusal must not be undone by that refusal.
+
+        RED-before-fix: ``try_reserve`` ran the sweep inside the decision
+        transaction, and the ``lane_quarantined`` branch rolled it back. The
+        caller was told the lane was quarantined for ``lease_expired`` while the
+        store still reported the dead holder ``active`` with an unchanged fence —
+        and that holder's ``(run_id, fence)`` still authenticated ``renew`` and
+        ``complete``. A lease nobody can prove dead is a lease a zombie keeps.
+
+        No explicit ``expire()`` call here: the second runner's own admission
+        transaction is the sweep, which is exactly the path a crashed runner
+        leaves to whoever arrives next.
+        """
+        granted = authority.try_reserve(lane_id="lane-a", demand=DEMAND,
+                                        run_id="run-1", ttl_s=0.01)
+        assert granted.granted
+        fence = granted.allocation.fence
+        time.sleep(0.02)
+        refused = authority.try_reserve(lane_id="lane-a", demand=DEMAND, run_id="run-2")
+        assert not refused.granted
+        assert refused.reason == "lane_quarantined"
+
+        dead = authority.allocation("run-1")
+        assert dead.state is State.QUARANTINED, dead.state
+        assert dead.fence > fence, (fence, dead.fence)
+        assert authority.quarantined()["lane-a"][0] == "lease_expired"
+        assert authority.fence_generation > fence
+
+        with pytest.raises(Fenced):
+            authority.renew("run-1", fence, ttl_s=30.0)
+        with pytest.raises(Fenced):
+            authority.complete("run-1", fence, clean=True, detail="zombie release")
+
     def test_expired_vector_still_counts_against_the_budget(self, authority):
         """Quarantined-but-uncleaned work keeps its room: the DUT may still run."""
         self._lane_small(authority)
