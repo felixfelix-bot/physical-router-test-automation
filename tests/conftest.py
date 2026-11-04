@@ -192,10 +192,20 @@ def _claim_handoff_guard(
         # What the LabgridBench in this session will actually claim as. The
         # coordinator stores one owner string per place, so a claim attributed
         # to a different run is not this run's reservation.
+        #
+        # The environment passed here is THIS process's, i.e. the child's — the
+        # runner exports ``LG_HOSTNAME``/``LG_USERNAME`` for the run inside the
+        # claim (``FleetPlan.claim_env``), and ``ClientIdentity.current`` reads
+        # exactly those two variables. So the fixture derives the per-run
+        # identity from what the runner handed it, never from a value of its
+        # own: an ambient ``LG_USERNAME`` that a preset left in the parent is
+        # overridden by the claim, and if the runner did NOT export one the
+        # disagreement surfaces as ``claim_owner_mismatch`` below instead of
+        # being silently adopted.
         with contextlib.suppress(Exception):
             from lib.labgrid_venue import ClientIdentity
 
-            identity_owner = ClientIdentity.current().owner
+            identity_owner = ClientIdentity.current(env).owner
 
     decision = evaluate_handoff(
         environ=env,

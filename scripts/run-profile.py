@@ -74,13 +74,24 @@ class FleetPlan:
     that situation.
     """
 
-    __slots__ = ("admission", "binding", "run_id", "ttl_s")
+    __slots__ = ("admission", "binding", "run_id", "ttl_s", "identity")
 
-    def __init__(self, admission: Admission, binding: Any, run_id: str, ttl_s: float) -> None:
+    def __init__(
+        self,
+        admission: Admission,
+        binding: Any,
+        run_id: str,
+        ttl_s: float,
+        identity: Any = None,
+    ) -> None:
         self.admission = admission
         self.binding = binding
         self.run_id = run_id
         self.ttl_s = ttl_s
+        #: The identity this run reserves AND acquires as. Held on the plan so
+        #: the claim, the handoff check and the child's own
+        #: ``ClientIdentity.current()`` cannot be derived from two places.
+        self.identity = identity
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
         return f"FleetPlan(run_id={self.run_id!r}, lane={getattr(self.binding, 'resource_id', '?')!r})"
@@ -92,14 +103,44 @@ class FleetPlan:
         cannot fall back to direct/legacy underneath the reservation; the
         ``TOLLGATE_FLEET_CLAIM_*`` triple is what ``tests/conftest.py``'s
         ``_claim_handoff_guard`` verifies before ``venue_mutex`` takes anything.
+
+        ``LG_HOSTNAME``/``LG_USERNAME`` carry the run's **per-run** identity, so
+        the child's ``ClientIdentity.current()`` — which reads exactly those two
+        variables — resolves to the same owner the claim names. Exporting them
+        is what makes the child's environment *authoritative*: without them the
+        fixture falls back to the parent's ambient ``LG_USERNAME`` (an OS user,
+        or a trial preset that is identical for every run) and the claim, the
+        acquisition and the assertion are three different owners.
         """
         claim = self.binding.claim
+        identity = self.identity or run_identity(self.run_id, {})
         return {
             **self.binding.as_env(),
+            **identity.env(),
             ENV_PLACE: claim.place,
             ENV_OWNER: claim.owner,
             ENV_RUN_ID: self.run_id,
         }
+
+
+def run_identity(run_id: str, env: dict[str, str]):
+    """The one identity a run reserves and acquires as.
+
+    ``ClientIdentity.for_run`` — never ``current()``. ``current()`` reads the
+    *ambient* ``LG_USERNAME``, which in a trial harness is a constant
+    (``trial``), so every run on the host would resolve to one coordinator
+    owner and could release another's place. ``for_run`` is deterministic in
+    the run id (a retry reconciles) and unique per run (two runs never share).
+
+    The host stays the real one: ``LG_HOSTNAME`` if the environment names it,
+    else ``for_run``'s own hostname fallback. That host is then *exported* into
+    the claim, so the child computes it from an explicit value instead of
+    independently.
+    """
+    from lib.labgrid_venue import ClientIdentity
+
+    host = (env.get("LG_HOSTNAME") or "").strip() or None
+    return ClientIdentity.for_run(run_id, host=host)
 
 
 def scope_from_profile(profile: dict[str, Any]) -> str:
@@ -168,11 +209,12 @@ def bind_fleet_run(
             "a lane cannot be bound to a place without it",
         ) from None
 
-    # The owner the CHILD's fixture will acquire as, computed from the env the
-    # child will receive — not from this process's environment. If these two
-    # disagree the claim is attributed to an identity that never takes the
-    # place, and the handoff guard would refuse mid-run.
-    owner = ClientIdentity.current(env).owner
+    # The owner the CHILD's fixture will acquire as. Per-run, from the run id
+    # — NOT ``ClientIdentity.current(env)``, which reads the ambient
+    # ``LG_USERNAME`` that a trial harness presets to one constant for every
+    # run. The same value is exported to the child in ``claim_env()``, so the
+    # reservation and the acquisition are one identity rather than two.
+    owner = run_identity(run_id, env).owner
 
     try:
         return check_binding(
@@ -200,13 +242,13 @@ def verify_claim_handoff(binding: Any, *, run_id: str, env: dict[str, str]) -> N
     the fixture would refuse is refused before host budget is taken, with the
     runner's own exit code. Same function, same inputs, so they cannot disagree.
     """
-    from lib.labgrid_venue import ClientIdentity
-
     decision = evaluate_handoff(
         environ={**env, ENV_PLACE: binding.place, ENV_OWNER: binding.owner, ENV_RUN_ID: run_id},
         resolved_place=binding.place,
         owns_place=True,
-        identity_owner=ClientIdentity.current(env).owner,
+        # The same per-run identity ``claim_env()`` exports to the child, so
+        # this pre-flight and ``_claim_handoff_guard`` cannot disagree.
+        identity_owner=run_identity(run_id, env).owner,
     )
     if decision.refused:
         raise AdmissionRefused(f"claim_{decision.code.value}", decision.message)
@@ -302,6 +344,7 @@ def plan_fleet_run(
         binding=binding,
         run_id=run_id,
         ttl_s=float(args.lease_ttl),
+        identity=run_identity(run_id, env),
     )
 
 
@@ -477,6 +520,19 @@ def tee_run(
         return process.wait()
 
 
+def _plan_identity(plan: Any, env: dict[str, str]):
+    """Who this plan's run is, for reads that must be attributable to it."""
+    from lib.labgrid_venue import ClientIdentity
+
+    identity = getattr(plan, "identity", None)
+    if identity is not None:
+        return identity
+    run_id = getattr(plan, "run_id", "") or ""
+    if run_id:
+        return run_identity(run_id, env)
+    return ClientIdentity.current(env)
+
+
 def re_read_ownership(plan: "FleetPlan | None", env: dict[str, str]) -> str | None:
     """Ask the coordinator who holds the bound place NOW. Read-only.
 
@@ -503,7 +559,13 @@ def re_read_ownership(plan: "FleetPlan | None", env: dict[str, str]) -> str | No
         bench = LabgridBench(
             plan.binding.coordinator,
             plan.binding.place,
-            identity=ClientIdentity.current(env),
+            # The identity this run reserved under: the plan's, else derived
+            # from its run id. `show` is a read, so the identity cannot change
+            # WHAT we learn — but the re-read must be attributable to the run
+            # that reserved, and it must not invent a failure: a plan with
+            # neither identity nor run id falls back to the ambient one rather
+            # than returning None and reporting a readable place as unreadable.
+            identity=_plan_identity(plan, env),
         )
         return bench.owner()
     except Exception:  # noqa: BLE001 - unreadable ownership is not "free"

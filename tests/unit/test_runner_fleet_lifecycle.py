@@ -29,6 +29,7 @@ import yaml
 
 from lib.fleet_authority import Demand, FleetAuthority, HostSpec, LaneSpec, State
 from lib.fleet_binding import Binding, PlaceClaim
+from lib.labgrid_venue import ClientIdentity
 from lib.run_admission import AdmissionRefused
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -46,7 +47,14 @@ BUDGET = dict(
 COORDINATOR = "coord.example:20408"
 PLACE = "place-a1"
 DUT = "10.0.0.11"
-OWNER = "host/runner"
+#: The owner a bound run reserves AND acquires as: the PER-RUN identity.
+#: ``ClientIdentity.current()`` would give ``host/<os-user>`` — the same string
+#: for every run on the host, which is the collision this whole seam prevents.
+#: The stubbed ambient identity below is deliberately a *different* user, so a
+#: test that accidentally reads it fails instead of silently agreeing.
+RUN_ID = "run-1"
+OWNER = ClientIdentity.for_run(RUN_ID, host="host").owner
+AMBIENT_OWNER = "host/runner"
 
 
 # --------------------------------------------------------------------------- #
@@ -188,6 +196,10 @@ def prepare_main(monkeypatch, tmp_path, *extra, marker: Path | None = None):
     monkeypatch.setenv("TOLLGATE_LABGRID_PLACE", "")
     monkeypatch.setenv("TOLLGATE_SSH_HOST", DUT)
     monkeypatch.setenv("TOLLGATE_LAB_TYPE", "physical")
+    # Pin the run id and the real host: ``main()`` derives the per-run identity
+    # from them, and the assertions below name that identity.
+    monkeypatch.setenv("TOLLGATE_RUN_ID", RUN_ID)
+    monkeypatch.setenv("LG_HOSTNAME", "host")
     monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
     monkeypatch.setattr(
         sys,
@@ -683,16 +695,19 @@ def test_re_read_ownership_reads_the_coordinator_without_acquiring(monkeypatch, 
 
     monkeypatch.setattr(labgrid_venue, "LabgridBench", FakeBench)
     plan = SimpleNamespace(
-        binding=SimpleNamespace(coordinator=COORDINATOR, place=PLACE, owner=OWNER)
+        binding=SimpleNamespace(coordinator=COORDINATOR, place=PLACE, owner=OWNER),
+        run_id=RUN_ID,
+        identity=ClientIdentity.for_run(RUN_ID, host="host"),
     )
 
     assert runner.re_read_ownership(plan, {"TOLLGATE_LAB_INVENTORY": "unused"}) == OWNER
     assert seen["coordinator"] == COORDINATOR
     assert seen["place"] == PLACE
     assert seen["owner_calls"] == 1
-    # The identity the bench reads with is derived from the *child's* env, so the
-    # runner and the fixture agree on who "we" are.
-    assert seen["identity"].owner == OWNER
+    # The identity the bench reads with is the run's own, so the re-read is
+    # attributable to the run that reserved — not the ambient OS user, which is
+    # one string for every run on the host.
+    assert seen["identity"].owner == OWNER != AMBIENT_OWNER
 
 
 def test_re_read_ownership_failure_is_not_reported_as_free(monkeypatch, tmp_path):

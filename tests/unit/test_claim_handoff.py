@@ -197,7 +197,7 @@ def venue_spy(monkeypatch):
     monkeypatch.setattr(
         ClientIdentity,
         "current",
-        classmethod(lambda cls: ClientIdentity("host-1", "prta-run-1-deadbeef")),
+        classmethod(lambda cls, environ=None: ClientIdentity("host-1", "prta-run-1-deadbeef")),
     )
     return state
 
@@ -633,7 +633,7 @@ class TestConftestSeam:
         monkeypatch.setenv(ENV_OWNER, OWNER)
         monkeypatch.setenv(ENV_RUN_ID, RUN)
 
-        def boom(cls):
+        def boom(cls, environ=None):
             raise RuntimeError("no identity available")
 
         monkeypatch.setattr(ClientIdentity, "current", classmethod(boom))
@@ -697,7 +697,7 @@ class TestNoClaimIsByteIdenticalToBase:
             mp.setattr(
                 ClientIdentity,
                 "current",
-                classmethod(lambda cls: ClientIdentity("host-1", "prta-run-1-deadbeef")),
+                classmethod(lambda cls, environ=None: ClientIdentity("host-1", "prta-run-1-deadbeef")),
             )
             fn = getattr(module.router, "_fixture_function", None) or module.router.__wrapped__
             fn(request, FakeBackend())
