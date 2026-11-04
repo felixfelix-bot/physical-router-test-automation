@@ -71,6 +71,61 @@ def check_layout():
         probe = Path(directory) / 'result'
         probe.write_bytes(b'work-contract')
         assert probe.read_bytes() == b'work-contract'
+        work_transaction(Path(directory))
+
+
+def work_transaction(work):
+    import sqlite3
+    result = work / 'result.json'
+    result.write_bytes(b'{"work": "PASS"}\n')
+    assert json.loads(result.read_bytes()) == {'work': 'PASS'}
+    result.unlink()
+    database = work / 'probe.db'
+    connection = sqlite3.connect(str(database))
+    try:
+        assert connection.execute('PRAGMA journal_mode=WAL').fetchone() == ('wal',)
+        connection.execute('CREATE TABLE probe(value INTEGER)')
+        connection.execute('INSERT INTO probe VALUES (7)')
+        connection.commit()
+        assert connection.execute('SELECT value FROM probe').fetchall() == [(7,)]
+        connection.execute('INSERT INTO probe VALUES (9)')
+        connection.rollback()
+        assert connection.execute('SELECT value FROM probe').fetchall() == [(7,)]
+        assert (work / 'probe.db-wal').exists()
+        assert (work / 'probe.db-shm').exists()
+        assert connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone() == (0, 0, 0)
+    finally:
+        connection.close()
+    database.unlink()
+    assert not (work / 'probe.db-wal').exists()
+    assert not (work / 'probe.db-shm').exists()
+    print(json.dumps({'work_transaction': 'PASS', 'results_write_read_unlink': 'PASS',
+                      'sqlite_commit_rollback_wal_checkpoint': 'PASS'}), flush=True)
+
+
+def private_mount_evidence():
+    mounts = Path('/proc/self/mountinfo').read_text()
+    paths = ('/', '/work', '/source', '/runtime')
+    stats = {p: {'flags': os.statvfs(p).f_flag,
+                 'bytes': os.statvfs(p).f_blocks * os.statvfs(p).f_frsize}
+             for p in paths}
+    print(json.dumps({'mountinfo': mounts, 'statvfs': stats}), flush=True)
+    entry = next(line for line in mounts.splitlines() if line.split()[4] == '/work')
+    assert ' - tmpfs ' in entry
+    assert {'rw', 'nosuid', 'nodev', 'noexec'} <= set(entry.split()[5].split(','))
+    assert 0 < stats['/work']['bytes'] <= 64 * 1024 * 1024
+    st = Path('/work').stat()
+    assert (st.st_uid, st.st_gid, st.st_mode & 0o777) == (65534, 65534, 0o700)
+    for path in ('/source', '/runtime'):
+        assert stats[path]['flags'] & os.ST_RDONLY
+    fixture = '/source/empty-labgrid.yaml'
+    try:
+        fd = os.open(fixture, os.O_WRONLY)
+    except OSError as exc:
+        assert exc.errno in (errno.EROFS, errno.EACCES, errno.EPERM)
+    else:
+        os.close(fd)
+        raise AssertionError('writable fixture')
 
 
 def parser_probe():
@@ -141,6 +196,7 @@ def main(mode='adversarial'):
             assert client.recv(2) == b'ok'
     print(json.dumps({'reached': 'serial/environment exclusions, read-only source/runtime, loopback roundtrip'}), flush=True)
     if mode == 'parser':
+        private_mount_evidence()
         parser_probe()
         print(json.dumps({'probe': 'PASS', 'mode': mode}), flush=True)
         time.sleep(3)  # retain a bounded live observation window

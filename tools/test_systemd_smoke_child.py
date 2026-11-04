@@ -98,7 +98,7 @@ class ChildMainTests(unittest.TestCase):
 
     def test_parser_mode_never_forks(self):
         probe = ProbeDouble()
-        with patch.object(child, 'parser_probe') as parser:
+        with patch.object(child, 'private_mount_evidence'), patch.object(child, 'parser_probe') as parser:
             probe.run('parser')
         parser.assert_called_once_with()
         probe.os.fork.assert_not_called()

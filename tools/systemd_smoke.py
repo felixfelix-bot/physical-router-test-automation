@@ -23,6 +23,7 @@ POLICY = {
     'SupplementaryGroups': '', 'KillMode': 'control-group', 'SendSIGKILL': 'yes',
     'TimeoutStopSec': '5s', 'RuntimeMaxSec': '60s', 'Restart': 'no',
     'WorkingDirectory': '/work', 'ReadWritePaths': '/work',
+    'TemporaryFileSystem': '/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534',
     'StandardInput': 'null', 'StandardOutput': 'journal', 'StandardError': 'journal',
     'SetLoginEnvironment': 'no', 'Environment': 'PATH=/runtime/bin LANG=C',
     'TasksMax': '16', 'MemoryMax': '256M',

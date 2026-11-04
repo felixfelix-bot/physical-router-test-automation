@@ -1,4 +1,7 @@
-# Offline salvage — no live retry (2026-11-04)
+# Offline salvage — historical baseline (2026-11-04)
+
+Superseded by `private-work-result.md`: authorized private tmpfs policy added;
+one live attempt failed importing labgrid before mount/work checks. Parser NOT ready.
 
 Static `targets: {}` is now explicitly staged, hashed and sealed as
 `/source/empty-labgrid.yaml`; parser only reads it. Existing drafts retained.
