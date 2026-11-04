@@ -1,0 +1,248 @@
+{
+  "unit": "prta-smoke-3b9e2eb69f24.service",
+  "root": "/var/lib/prta-smoke-3b9e2eb69f24",
+  "policy": {
+    "PrivateNetwork": "yes",
+    "PrivateDevices": "yes",
+    "PrivateTmp": "yes",
+    "ProtectHome": "yes",
+    "ProtectSystem": "strict",
+    "ProtectControlGroups": "yes",
+    "ProtectKernelTunables": "yes",
+    "ProtectKernelModules": "yes",
+    "ProtectKernelLogs": "yes",
+    "ProtectProc": "invisible",
+    "ProcSubset": "pid",
+    "NoNewPrivileges": "yes",
+    "CapabilityBoundingSet": "",
+    "AmbientCapabilities": "",
+    "RestrictSUIDSGID": "yes",
+    "RestrictNamespaces": "yes",
+    "Delegate": "no",
+    "RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6",
+    "User": "65534",
+    "Group": "65534",
+    "SupplementaryGroups": "",
+    "KillMode": "control-group",
+    "SendSIGKILL": "yes",
+    "TimeoutStopSec": "5s",
+    "RuntimeMaxSec": "60s",
+    "Restart": "no",
+    "WorkingDirectory": "/work",
+    "ReadWritePaths": "/work",
+    "TemporaryFileSystem": "/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534",
+    "StandardInput": "null",
+    "StandardOutput": "journal",
+    "StandardError": "journal",
+    "SetLoginEnvironment": "no",
+    "Environment": "PATH=/runtime/bin LANG=C",
+    "TasksMax": "16",
+    "MemoryMax": "256M"
+  },
+  "cleanup": "cgroup_removed",
+  "frozen_manifest_verified": true,
+  "command": [
+    "sudo",
+    "-n",
+    "/usr/bin/systemd-run",
+    "--system",
+    "--unit=prta-smoke-3b9e2eb69f24.service",
+    "--service-type=exec",
+    "-p",
+    "PrivateNetwork=yes",
+    "-p",
+    "PrivateDevices=yes",
+    "-p",
+    "PrivateTmp=yes",
+    "-p",
+    "ProtectHome=yes",
+    "-p",
+    "ProtectSystem=strict",
+    "-p",
+    "ProtectControlGroups=yes",
+    "-p",
+    "ProtectKernelTunables=yes",
+    "-p",
+    "ProtectKernelModules=yes",
+    "-p",
+    "ProtectKernelLogs=yes",
+    "-p",
+    "ProtectProc=invisible",
+    "-p",
+    "ProcSubset=pid",
+    "-p",
+    "NoNewPrivileges=yes",
+    "-p",
+    "CapabilityBoundingSet=",
+    "-p",
+    "AmbientCapabilities=",
+    "-p",
+    "RestrictSUIDSGID=yes",
+    "-p",
+    "RestrictNamespaces=yes",
+    "-p",
+    "Delegate=no",
+    "-p",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+    "-p",
+    "User=65534",
+    "-p",
+    "Group=65534",
+    "-p",
+    "SupplementaryGroups=",
+    "-p",
+    "KillMode=control-group",
+    "-p",
+    "SendSIGKILL=yes",
+    "-p",
+    "TimeoutStopSec=5s",
+    "-p",
+    "RuntimeMaxSec=60s",
+    "-p",
+    "Restart=no",
+    "-p",
+    "WorkingDirectory=/work",
+    "-p",
+    "ReadWritePaths=/work",
+    "-p",
+    "TemporaryFileSystem=/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534",
+    "-p",
+    "StandardInput=null",
+    "-p",
+    "StandardOutput=journal",
+    "-p",
+    "StandardError=journal",
+    "-p",
+    "SetLoginEnvironment=no",
+    "-p",
+    "Environment=PATH=/runtime/bin LANG=C",
+    "-p",
+    "TasksMax=16",
+    "-p",
+    "MemoryMax=256M",
+    "-p",
+    "RootDirectory=/var/lib/prta-smoke-3b9e2eb69f24",
+    "/runtime/bin/python3",
+    "-I",
+    "-B",
+    "/source/systemd_smoke_child.py",
+    "--mode",
+    "parser"
+  ],
+  "mode": "parser",
+  "launch": "Running as unit: prta-smoke-3b9e2eb69f24.service; invocation ID: 9df176a3842543368d0299322ff948cb\n",
+  "live": "Type=exec\nExitType=main\nRestart=no\nRestartMode=normal\nNotifyAccess=none\nRestartUSec=100ms\nRestartSteps=0\nRestartMaxDelayUSec=infinity\nRestartUSecNext=100ms\nTimeoutStartUSec=1min 30s\nTimeoutStopUSec=5s\nTimeoutAbortUSec=5s\nTimeoutStartFailureMode=terminate\nTimeoutStopFailureMode=terminate\nRuntimeMaxUSec=1min\nRuntimeRandomizedExtraUSec=0\nWatchdogUSec=0\nWatchdogTimestampMonotonic=0\nRootDirectoryStartOnly=no\nRemainAfterExit=no\nGuessMainPID=yes\nMainPID=4109702\nControlPID=0\nFileDescriptorStoreMax=0\nNFileDescriptorStore=0\nFileDescriptorStorePreserve=restart\nStatusErrno=0\nResult=success\nReloadResult=success\nCleanResult=success\nUID=65534\nGID=65534\nNRestarts=0\nOOMPolicy=stop\nReloadSignal=1\nExecMainStartTimestamp=Wed 2026-11-04 01:34:16 CET\nExecMainStartTimestampMonotonic=113122252179\nExecMainExitTimestampMonotonic=0\nExecMainPID=4109702\nExecMainCode=0\nExecMainStatus=0\nExecStart={ path=/runtime/bin/python3 ; argv[]=/runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode parser ; ignore_errors=no ; start_time=[Wed 2026-11-04 01:34:16 CET] ; stop_time=[n/a] ; pid=4109702 ; code=(null) ; status=0/0 }\nExecStartEx={ path=/runtime/bin/python3 ; argv[]=/runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode parser ; flags= ; start_time=[Wed 2026-11-04 01:34:16 CET] ; stop_time=[n/a] ; pid=4109702 ; code=(null) ; status=0/0 }\nSlice=system.slice\nControlGroup=/system.slice/prta-smoke-3b9e2eb69f24.service\nControlGroupId=3903145\nMemoryCurrent=3055616\nMemoryPeak=3055616\nMemorySwapCurrent=0\nMemorySwapPeak=0\nMemoryZSwapCurrent=0\nMemoryAvailable=265379840\nCPUUsageNSec=20509000\nEffectiveCPUs=0-7\nEffectiveMemoryNodes=0\nTasksCurrent=1\nIPIngressBytes=[no data]\nIPIngressPackets=[no data]\nIPEgressBytes=[no data]\nIPEgressPackets=[no data]\nIOReadBytes=[not set]\nIOReadOperations=[not set]\nIOWriteBytes=[not set]\nIOWriteOperations=[not set]\nDelegate=no\nCPUAccounting=yes\nCPUWeight=[not set]\nStartupCPUWeight=[not set]\nCPUShares=[not set]\nStartupCPUShares=[not set]\nCPUQuotaPerSecUSec=infinity\nCPUQuotaPeriodUSec=infinity\nIOAccounting=no\nIOWeight=[not set]\nStartupIOWeight=[not set]\nBlockIOAccounting=no\nBlockIOWeight=[not set]\nStartupBlockIOWeight=[not set]\nMemoryAccounting=yes\nDefaultMemoryLow=0\nDefaultStartupMemoryLow=0\nDefaultMemoryMin=0\nMemoryMin=0\nMemoryLow=0\nStartupMemoryLow=0\nMemoryHigh=infinity\nStartupMemoryHigh=infinity\nMemoryMax=268435456\nStartupMemoryMax=infinity\nMemorySwapMax=infinity\nStartupMemorySwapMax=infinity\nMemoryZSwapMax=infinity\nStartupMemoryZSwapMax=infinity\nMemoryLimit=infinity\nDevicePolicy=closed\nTasksAccounting=yes\nTasksMax=16\nIPAccounting=no\nManagedOOMSwap=auto\nManagedOOMMemoryPressure=auto\nManagedOOMMemoryPressureLimit=0\nManagedOOMPreference=none\nMemoryPressureWatch=auto\nMemoryPressureThresholdUSec=200ms\nCoredumpReceive=no\nEnvironment=PATH=/runtime/bin LANG=C\nUMask=0022\nLimitCPU=infinity\nLimitCPUSoft=infinity\nLimitFSIZE=infinity\nLimitFSIZESoft=infinity\nLimitDATA=infinity\nLimitDATASoft=infinity\nLimitSTACK=infinity\nLimitSTACKSoft=8388608\nLimitCORE=infinity\nLimitCORESoft=0\nLimitRSS=infinity\nLimitRSSSoft=infinity\nLimitNOFILE=524288\nLimitNOFILESoft=1024\nLimitAS=infinity\nLimitASSoft=infinity\nLimitNPROC=22438\nLimitNPROCSoft=22438\nLimitMEMLOCK=8388608\nLimitMEMLOCKSoft=8388608\nLimitLOCKS=infinity\nLimitLOCKSSoft=infinity\nLimitSIGPENDING=22438\nLimitSIGPENDINGSoft=22438\nLimitMSGQUEUE=819200\nLimitMSGQUEUESoft=819200\nLimitNICE=0\nLimitNICESoft=0\nLimitRTPRIO=0\nLimitRTPRIOSoft=0\nLimitRTTIME=infinity\nLimitRTTIMESoft=infinity\nWorkingDirectory=/work\nRootDirectory=/var/lib/prta-smoke-3b9e2eb69f24\nRootEphemeral=no\nOOMScoreAdjust=0\nCoredumpFilter=0x33\nNice=0\nIOSchedulingClass=2\nIOSchedulingPriority=4\nCPUSchedulingPolicy=0\nCPUSchedulingPriority=0\nCPUAffinityFromNUMA=no\nNUMAPolicy=n/a\nTimerSlackNSec=50000\nCPUSchedulingResetOnFork=no\nNonBlocking=no\nStandardInput=null\nStandardOutput=journal\nStandardError=journal\nTTYReset=no\nTTYVHangup=no\nTTYVTDisallocate=no\nSyslogPriority=30\nSyslogLevelPrefix=yes\nSyslogLevel=6\nSyslogFacility=3\nLogLevelMax=-1\nLogRateLimitIntervalUSec=0\nLogRateLimitBurst=0\nSecureBits=0\nUser=65534\nGroup=65534\nDynamicUser=no\nSetLoginEnvironment=no\nRemoveIPC=no\nReadWritePaths=/work\nPrivateTmp=yes\nPrivateDevices=yes\nProtectClock=no\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectKernelLogs=yes\nProtectControlGroups=yes\nPrivateNetwork=yes\nPrivateUsers=no\nPrivateMounts=no\nPrivateIPC=no\nProtectHome=yes\nProtectSystem=strict\nSameProcessGroup=no\nUtmpMode=init\nIgnoreSIGPIPE=yes\nNoNewPrivileges=yes\nSystemCallErrorNumber=2147483646\nLockPersonality=no\nRestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX\nRuntimeDirectoryPreserve=no\nRuntimeDirectoryMode=0755\nStateDirectoryMode=0755\nCacheDirectoryMode=0755\nLogsDirectoryMode=0755\nConfigurationDirectoryMode=0755\nTimeoutCleanUSec=infinity\nMemoryDenyWriteExecute=no\nRestrictRealtime=no\nRestrictSUIDSGID=yes\nRestrictNamespaces=yes\nTemporaryFileSystem=/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534\nMountAPIVFS=yes\nKeyringMode=private\nProtectProc=invisible\nProcSubset=pid\nProtectHostname=no\nMemoryKSM=no\nRootImagePolicy=root=verity+signed+encrypted+unprotected+absent:usr=verity+signed+encrypted+unprotected+absent:home=encrypted+unprotected+absent:srv=encrypted+unprotected+absent:tmp=encrypted+unprotected+absent:var=encrypted+unprotected+absent\nMountImagePolicy=root=verity+signed+encrypted+unprotected+absent:usr=verity+signed+encrypted+unprotected+absent:home=encrypted+unprotected+absent:srv=encrypted+unprotected+absent:tmp=encrypted+unprotected+absent:var=encrypted+unprotected+absent\nExtensionImagePolicy=root=verity+signed+encrypted+unprotected+absent:usr=verity+signed+encrypted+unprotected+absent:home=encrypted+unprotected+absent:srv=encrypted+unprotected+absent:tmp=encrypted+unprotected+absent:var=encrypted+unprotected+absent\nKillMode=control-group\nKillSignal=15\nRestartKillSignal=15\nFinalKillSignal=9\nSendSIGKILL=yes\nSendSIGHUP=no\nWatchdogSignal=6\nId=prta-smoke-3b9e2eb69f24.service\nNames=prta-smoke-3b9e2eb69f24.service\nRequires=sysinit.target system.slice -.mount\nWants=tmp.mount\nConflicts=shutdown.target\nBefore=shutdown.target\nAfter=-.mount systemd-journald.socket tmp.mount basic.target systemd-tmpfiles-setup.service system.slice sysinit.target\nRequiresMountsFor=/work /var/lib/prta-smoke-3b9e2eb69f24 /var/tmp\nDescription=/runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode parser\nLoadState=loaded\nActiveState=active\nFreezerState=running\nSubState=running\nFragmentPath=/run/systemd/transient/prta-smoke-3b9e2eb69f24.service\nUnitFileState=transient\nUnitFilePreset=enabled\nStateChangeTimestamp=Wed 2026-11-04 01:34:16 CET\nStateChangeTimestampMonotonic=113122268043\nInactiveExitTimestamp=Wed 2026-11-04 01:34:16 CET\nInactiveExitTimestampMonotonic=113122252412\nActiveEnterTimestamp=Wed 2026-11-04 01:34:16 CET\nActiveEnterTimestampMonotonic=113122268043\nActiveExitTimestampMonotonic=0\nInactiveEnterTimestampMonotonic=0\nCanStart=yes\nCanStop=yes\nCanReload=no\nCanIsolate=no\nCanFreeze=yes\nStopWhenUnneeded=no\nRefuseManualStart=no\nRefuseManualStop=no\nAllowIsolate=no\nDefaultDependencies=yes\nSurviveFinalKillSignal=no\nOnSuccessJobMode=fail\nOnFailureJobMode=replace\nIgnoreOnIsolate=no\nNeedDaemonReload=no\nJobTimeoutUSec=infinity\nJobRunningTimeoutUSec=infinity\nJobTimeoutAction=none\nConditionResult=yes\nAssertResult=yes\nConditionTimestamp=Wed 2026-11-04 01:34:16 CET\nConditionTimestampMonotonic=113122238275\nAssertTimestamp=Wed 2026-11-04 01:34:16 CET\nAssertTimestampMonotonic=113122238276\nTransient=yes\nPerpetual=no\nStartLimitIntervalUSec=10s\nStartLimitBurst=5\nStartLimitAction=none\nFailureAction=none\nSuccessAction=none\nInvocationID=9df176a3842543368d0299322ff948cb\nCollectMode=inactive\n",
+  "live_cgroup_events": "populated 1\nfrozen 0\n",
+  "live_recursive_procs": {
+    "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+  },
+  "live_samples": [
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109738\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109738\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109738\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109738\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109738\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n4109745\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    },
+    {
+      "/sys/fs/cgroup/system.slice/prta-smoke-3b9e2eb69f24.service/cgroup.procs": "4109702\n"
+    }
+  ],
+  "result": "Result=success\nExecMainCode=0\nExecMainStatus=0\nActiveState=inactive\nSubState=dead\n",
+  "stop": "Failed to stop prta-smoke-3b9e2eb69f24.service: Unit prta-smoke-3b9e2eb69f24.service not loaded.\n",
+  "journal": "Nov 04 01:34:16.091036 x280 systemd[1]: Starting prta-smoke-3b9e2eb69f24.service - /runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode parser...\nNov 04 01:34:16.106669 x280 systemd[1]: Started prta-smoke-3b9e2eb69f24.service - /runtime/bin/python3 -I -B /source/systemd_smoke_child.py --mode parser.\nNov 04 01:34:17.196085 x280 python3[4109702]: {\"identity\": {\"uid\": [65534, 65534, 65534], \"gid\": [65534, 65534, 65534], \"groups\": [65534]}, \"capabilities\": {\"CapInh\": \"0000000000000000\", \"CapPrm\": \"0000000000000000\", \"CapEff\": \"0000000000000000\", \"CapBnd\": \"0000000000000000\", \"CapAmb\": \"0000000000000000\", \"NoNewPrivs\": \"1\"}}\nNov 04 01:34:17.196441 x280 python3[4109702]: {\"home_denials\": {\"/home/c08r4d0r\": \"EACCES\", \"/root/.ssh\": \"EACCES\"}}\nNov 04 01:34:17.197800 x280 python3[4109702]: {\"reached\": \"home and executable exclusions\"}\nNov 04 01:34:17.198332 x280 python3[4109702]: {\"reached\": \"serial/environment exclusions, read-only source/runtime, loopback roundtrip\"}\nNov 04 01:34:17.198551 x280 python3[4109702]: {\"mountinfo\": \"2078 782 252:0 /var/lib/prta-smoke-3b9e2eb69f24 / ro,nosuid,relatime shared:460 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n2079 2078 0:63 / /dev ro,nosuid,noexec shared:462 - tmpfs tmpfs rw,size=4096k,nr_inodes=65536,mode=755,inode64\\n2080 2079 0:27 / /dev/pts rw,nosuid,noexec,relatime shared:511 master:3 - devpts devpts rw,gid=5,mode=620,ptmxmode=000\\n2081 2079 0:30 / /dev/shm rw,nosuid,nodev shared:512 master:4 - tmpfs tmpfs rw,inode64\\n2082 2079 0:23 / /dev/mqueue rw,nosuid,nodev,noexec,relatime shared:515 master:16 - mqueue mqueue rw\\n2083 2079 0:36 / /dev/hugepages rw,nosuid,nodev,relatime shared:516 master:15 - hugetlbfs hugetlbfs rw,pagesize=2M\\n2084 2078 0:28 /systemd/inaccessible/dir /home ro,nosuid,nodev,noexec,relatime shared:517 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n2085 2078 0:64 / /proc rw,nosuid,nodev,noexec,relatime shared:518 - proc proc rw,hidepid=invisible,subset=pid\\n2086 2078 0:28 /systemd/inaccessible/dir /root ro,nosuid,nodev,noexec,relatime shared:519 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n2087 2078 0:65 / /run rw,nosuid,relatime shared:520 - tmpfs tmpfs rw,inode64\\n2088 2087 0:28 /systemd/propagate/.os-release-stage /run/host/.os-release-stage ro,nosuid,nodev,noexec,relatime shared:521 master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n2089 2087 0:28 /systemd/propagate/prta-smoke-3b9e2eb69f24.service /run/systemd/incoming ro,nosuid,nodev,noexec,relatime master:5 - tmpfs tmpfs rw,size=760556k,mode=755,inode64\\n2090 2078 0:66 / /sys ro,nosuid,nodev,noexec,relatime shared:523 - sysfs sysfs rw\\n2091 2090 0:29 / /sys/firmware/efi/efivars ro,nosuid,nodev,noexec,relatime shared:524 master:8 - efivarfs efivarfs rw\\n2092 2090 0:34 / /sys/fs/bpf ro,nosuid,nodev,noexec,relatime shared:525 master:12 - bpf bpf rw,mode=700\\n2093 2090 0:32 / /sys/fs/cgroup ro,nosuid,nodev,noexec,relatime shared:526 master:10 - cgroup2 cgroup2 rw,nsdelegate,memory_recursiveprot\\n2094 2090 0:37 / /sys/fs/fuse/connections ro,nosuid,nodev,noexec,relatime shared:527 master:19 - fusectl fusectl rw\\n2095 2090 0:33 / /sys/fs/pstore ro,nosuid,nodev,noexec,relatime shared:528 master:11 - pstore none rw\\n2096 2090 0:21 / /sys/kernel/config ro,nosuid,nodev,noexec,relatime shared:529 master:20 - configfs configfs rw\\n2097 2090 0:9 / /sys/kernel/debug ro,nosuid,nodev,noexec,relatime shared:530 master:17 - debugfs debugfs rw\\n2098 2097 0:14 / /sys/kernel/debug/tracing ro,nosuid,nodev,noexec,relatime shared:531 master:217 - tracefs tracefs rw\\n2099 2090 0:8 / /sys/kernel/security ro,nosuid,nodev,noexec,relatime shared:532 master:9 - securityfs securityfs rw\\n2100 2090 0:14 / /sys/kernel/tracing ro,nosuid,nodev,noexec,relatime shared:533 master:18 - tracefs tracefs rw\\n2101 2078 252:0 /tmp/systemd-private-c81781987e8b413991fa338cc0e75cc1-prta-smoke-3b9e2eb69f24.service-HTXcIM/tmp /tmp rw,nosuid,relatime shared:534 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n2102 2078 252:0 /var/tmp/systemd-private-c81781987e8b413991fa338cc0e75cc1-prta-smoke-3b9e2eb69f24.service-pXnBWs/tmp /var/tmp rw,nosuid,relatime shared:535 master:1 - ext4 /dev/mapper/ubuntu--vg-ubuntu--lv rw\\n2103 2078 0:67 / /work rw,nosuid,nodev,noexec shared:536 - tmpfs tmpfs rw,size=32768k,nr_inodes=409600,mode=700,uid=65534,gid=65534,inode64\\n\", \"statvfs\": {\"/\": {\"flags\": 4099, \"bytes\": 264485994496}, \"/work\": {\"flags\": 14, \"bytes\": 33554432}, \"/source\": {\"flags\": 4099, \"bytes\": 264485994496}, \"/runtime\": {\"flags\": 4099, \"bytes\": 264485994496}}}\nNov 04 01:34:17.202424 x280 python3[4109702]: {\"work_transaction\": \"PASS\", \"results_write_read_unlink\": \"PASS\", \"sqlite_commit_rollback_wal_checkpoint\": \"PASS\"}\nNov 04 01:34:20.017220 x280 python3[4109702]: {\"parser\": \"PASS\", \"sqlite3\": \"3.45.1\", \"imports\": [\"labgrid\", \"pytest_html\"], \"client_help_exit\": 0, \"pytest_help_exit\": 0, \"argv\": [\"/runtime/bin/python3\", \"-I\", \"-B\", \"-m\", \"pytest\", \"-p\", \"labgrid.pytestplugin\", \"-p\", \"pytest_html.plugin\", \"--noconftest\", \"-c\", \"/dev/null\", \"--lg-env\", \"/source/empty-labgrid.yaml\", \"--html\", \"/work/unused.html\", \"--self-contained-html\", \"--junitxml\", \"/work/unused.xml\", \"--help\"]}\nNov 04 01:34:20.017220 x280 python3[4109702]: {\"probe\": \"PASS\", \"mode\": \"parser\"}\nNov 04 01:34:23.094210 x280 systemd[1]: prta-smoke-3b9e2eb69f24.service: Deactivated successfully.\nNov 04 01:34:23.094543 x280 systemd[1]: prta-smoke-3b9e2eb69f24.service: Consumed 3.995s CPU time, 78.3M memory peak, 0B memory swap peak.\n",
+  "staging_removed": true,
+  "final_unit": "LoadState=not-found\n"
+}

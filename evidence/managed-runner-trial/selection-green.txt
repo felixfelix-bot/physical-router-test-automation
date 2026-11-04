@@ -1,0 +1,12 @@
+{"work_transaction": "PASS", "results_write_read_unlink": "PASS", "sqlite_commit_rollback_wal_checkpoint": "PASS"}
+..{"mountinfo": "1 0 0:1 / /work rw,nosuid,nodev,noexec - tmpfs tmpfs rw,size=32768k", "statvfs": {"/": {"flags": 1, "bytes": 33554432}, "/work": {"flags": 0, "bytes": 33554432}, "/source": {"flags": 1, "bytes": 33554432}, "/runtime": {"flags": 1, "bytes": 33554432}}}
+.................................
+----------------------------------------------------------------------
+Ran 35 tests in 0.531s
+
+OK
+Name                     Stmts   Miss  Cover
+--------------------------------------------
+tools/systemd_smoke.py     154      1    99%
+--------------------------------------------
+TOTAL                      154      1    99%

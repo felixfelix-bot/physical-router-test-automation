@@ -76,6 +76,8 @@ class OrchestrationTests(unittest.TestCase):
                     self.assertTrue(not cg.exists() or ((cg / 'cgroup.events').read_text() == 'populated 0\n' and not (cg / 'cgroup.procs').read_text()))
                     shutil.rmtree(root)
                 return ''
+            # This orchestration double deliberately has no installed runtime.
+            stack.enter_context(patch.object(smoke, 'validate_selection'))
             stack.enter_context(patch.object(smoke, 'Path', side_effect=mapped))
             stack.enter_context(patch.object(Path, 'stat', stat))
             stack.enter_context(patch.object(smoke, 'run', side_effect=run))

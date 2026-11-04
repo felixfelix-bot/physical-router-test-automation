@@ -1190,3 +1190,7 @@ fallback returns and the `__main__` guard.
 - `pytest_cov` is absent from the repo venv, so coverage was measured with the
   `coverage` module directly; `tests/unit/test_story_evidence.py` cannot run
   here for lack of PIL.
+
+## Canonical selection correction
+
+See [canonical parser result](docs/canonical-parser-result.md). Previous manifests and commands above are historical, not reusable. One canonical live service passed child parser checks but launcher exit 1 on ExecMainCode=0 versus expected 1; stopped without retry. Cgroup and staging removed. Guard tests PASS, changed launcher coverage 99%.

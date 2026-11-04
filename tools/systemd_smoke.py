@@ -51,6 +51,22 @@ def validate(rows):
         assert len(data) == row['bytes']
 
 
+def validate_selection(rows):
+    """Reject obsolete layouts and incomplete parser runtimes before sudo."""
+    from managed_trial_manifest import loader_aliases
+    targets = {r['target'] for r in rows}
+    if any('/site-packages/' in target for target in targets):
+        raise ValueError('Historical site-packages layout is not reusable')
+    for module in ('labgrid', 'pytest', 'pytest_html', 'sqlite3'):
+        directory = 'dist-packages/' if module != 'sqlite3' else ''
+        target = '/runtime/lib/python3.12/' + directory + module + '/__init__.py'
+        if target not in targets:
+            raise ValueError('Missing required module: ' + module)
+    closed = loader_aliases(rows)
+    if {r['target']: r['sha256'] for r in closed} != {r['target']: r['sha256'] for r in rows}:
+        raise ValueError('Incomplete ELF closure')
+
+
 def validate_result(props, mode):
     expected = {'Result': 'timeout', 'ExecMainCode': '1', 'ExecMainStatus': '0',
                 'ActiveState': 'failed', 'SubState': 'failed'}
@@ -70,6 +86,7 @@ def main():
     # Exclude project code and unrelated editable/virtualenv startup helpers.
     rows = [r for r in rows if not r['target'].startswith('/source/') and not any(s in r['target'] for s in ('/tollgate_lab/', '/__editable_', '/_virtualenv.py'))]
     validate(rows)
+    validate_selection(rows)
     child = Path(__file__).with_name('systemd_smoke_child.py').read_bytes()
     fixture = Path(__file__).with_name('empty-labgrid.yaml').read_bytes()
     assert fixture == b'targets: {}\n'
