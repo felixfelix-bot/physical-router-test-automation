@@ -26,8 +26,27 @@ POLICY = {
     'TemporaryFileSystem': '/work:rw,nosuid,nodev,noexec,size=32M,mode=0700,uid=65534,gid=65534',
     'StandardInput': 'null', 'StandardOutput': 'journal', 'StandardError': 'journal',
     'SetLoginEnvironment': 'no', 'Environment': 'PATH=/runtime/bin LANG=C',
-    'TasksMax': '16', 'MemoryMax': '256M',
+    'TasksMax': '96', 'MemoryMax': '256M',
 }
+
+#: Threads one gRPC process costs before it can talk to a coordinator. Measured,
+#: not assumed: a freshly started ``labgrid-coordinator`` and a single
+#: ``labgrid-client create`` each hold exactly 12 tasks (``python3`` main plus
+#: ``grpc_global_tim``, ``event_engine`` x8 and ``lifeguard``) on this host, and
+#: the count does not follow the CPU count. ``TasksMax`` is a *thread* budget on
+#: cgroup v2 (pids controller), so the previous 16 killed gRPC's pool creation:
+#: the client printed ``pthread_create failed: Resource temporarily unavailable``
+#: and then blocked forever instead of failing, which is exactly the 65s
+#: ``create`` timeout that ended the first lifecycle trial. The coordinator alone
+#: consumes 12 of any child's budget because systemd counts the whole cgroup.
+GRPC_TASKS_PER_PROCESS = 12
+
+#: Concurrent gRPC processes one lifecycle trial needs: coordinator, the
+#: empty-place client, and up to three client subprocesses from the runner
+#: (show/acquire/release). Two spare processes of margin keep a fourth from
+#: hitting the same wall.
+GRPC_PROCESSES = 6
+TASKS_MIN = GRPC_TASKS_PER_PROCESS * GRPC_PROCESSES
 
 
 def run(*args, check=True):
@@ -86,6 +105,10 @@ def main():
     parser.add_argument('evidence', type=Path)
     parser.add_argument('--mode', choices=('adversarial', 'parser', 'lifecycle'), default='adversarial')
     args = parser.parse_args()
+    assert int(POLICY['TasksMax']) >= TASKS_MIN, (
+        f"TasksMax={POLICY['TasksMax']} cannot hold {GRPC_PROCESSES} gRPC processes "
+        f"at {GRPC_TASKS_PER_PROCESS} tasks each; gRPC will hang, not fail"
+    )
     args.evidence.mkdir(parents=True, exist_ok=False)
     rows = json.loads(args.inventory.read_text())['files']
     # Exclude project code and unrelated editable/virtualenv startup helpers.

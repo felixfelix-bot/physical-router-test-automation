@@ -1,3 +1,31 @@
+# labgrid `create` hang — diagnosed and fixed; next blocker exposed (2026-11-04)
+
+The 65 s `labgrid-client -p empty create` timeout is **proven**: `TasksMax` is a
+cgroup v2 *thread* budget, one labgrid gRPC process costs 12 tasks (measured),
+and `TasksMax=16` starved gRPC's pool — the client printed
+`pthread_create failed: Resource temporarily unavailable` and blocked forever
+instead of failing. Offline unprivileged A/B, same argv and coordinator, only the
+budget changed: 16 → timeout, 96 → `rc=0` in 0.37 s. Fixed by
+`TasksMax=96` (`12 tasks × 6 gRPC processes`) plus a pre-staging assertion; no
+other policy key changed. `command()` now journals argv/rc/stream tails on
+timeout instead of discarding them. Full writeup:
+`docs/labgrid-create-hang-diagnosis.md`; raw probe in
+`evidence/managed-runner-trial/task-budget-diag/`.
+
+Two same-policy retries then ran. `create` returned rc 0 both times; attempt 2
+died on a bare `--` reaching pytest as a path, fixed. Attempt 3
+(`~/reports/reviews/prta-lifecycle-actual-v3`, invocation
+`4ece96de71b64d5ebbae8220763bfb97`) reached BOTH runner cases for the first
+time: unauthorized rc75 `action_not_permitted` with no child/allocation PASS;
+authorized reserved the lane, **acquired the real empty place**, ran the venue
+child and got `released_confirmed` with `owner_after: ""` — then failed on
+identity: runner claim owner `trial/trial`
+(`ClientIdentity.current(env)`) vs fixture expectation
+`ClientIdentity.for_run(run_id)` = `trial/prta-…-64c5fec19bcbdece`. That
+runner/fixture identity disagreement is the next explicit decision, not fixed
+here; the trial stays UNQUALIFIED (no JUnit pass, exit 1). 43 focused offline
+tests pass; RED proven by stashing the budget fix.
+
 # Actual managed lifecycle attempt — FAILED before runner (2026-11-04)
 
 One bounded service executed; coordinator genuinely reported ready on private

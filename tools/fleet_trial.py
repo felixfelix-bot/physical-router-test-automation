@@ -14,8 +14,40 @@ from lib.labgrid_venue import LabgridBench
 PY = '/runtime/bin/python3'
 COORD = '127.0.0.1:20408'
 
-def command(argv, env):
-    result = subprocess.run(argv, env=env, cwd='/work', text=True, capture_output=True, timeout=65)
+#: Extra pytest arguments handed to run-profile.py. No bare ``--``: run-profile
+#: forwards everything after its own flags verbatim (``parse_known_args``), so a
+#: separator reaches pytest as a stray *path* and pytest exits 4 with
+#: ``file or directory not found: --no-dut`` before collecting anything.
+RUNNER_EXTRA = ['--no-dut', '--preflight=off', '-c', '/dev/null',
+                '-p', 'pytest_metadata.plugin', '-p', 'pytest_html.plugin',
+                '-p', 'no:cacheprovider', '-s']
+
+def bounded(value, limit=8192):
+    """Keep a fixed-size tail; a hang must not turn into an evidence gap."""
+    value = value or ''
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', errors='replace')
+    return value[-limit:], len(value) > limit
+
+
+def command(argv, env, timeout=65, cwd='/work'):
+    """Run one argv and ALWAYS journal argv, rc and both streams.
+
+    ``subprocess.run`` raises ``TimeoutExpired`` carrying whatever the child had
+    already written; the previous version let that exception escape unrecorded,
+    so a timed-out client left no output at all. The timeout stays a hard
+    failure — this only stops the evidence from being discarded.
+    """
+    try:
+        result = subprocess.run(argv, env=env, cwd=cwd, text=True,
+                                capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        out, out_cut = bounded(exc.stdout)
+        err, err_cut = bounded(exc.stderr)
+        print(json.dumps(dict(argv=argv, rc=None, timeout=timeout, stdout=out,
+                              stdout_truncated=out_cut, stderr=err,
+                              stderr_truncated=err_cut)), flush=True)
+        raise
     print(json.dumps(dict(argv=argv, rc=result.returncode, stdout=result.stdout, stderr=result.stderr)), flush=True)
     return result
 
@@ -59,7 +91,7 @@ def main():
         bench = LabgridBench(COORD, 'empty')
         assert bench.owner() == ''
         base = [PY, '-B', '/source/scripts/run-profile.py', '--profile', '/work/trial', '--no-render', '--fleet', 'trial_FLEET_A', '--resource', 'empty', '--lane', 'lane', '--authority-store', '/work/authority.db', '--demand-vcpus', '1', '--demand-ram-mib', '64', '--demand-disk-mib', '1', '--demand-inodes', '1', '--lease-ttl', '30']
-        extra = ['--', '--no-dut', '--preflight=off', '-c', '/dev/null', '-p', 'pytest_metadata.plugin', '-p', 'pytest_html.plugin', '-p', 'no:cacheprovider', '-s']
+        extra = RUNNER_EXTRA
         denied = command(base + ['--fleet-manifest', '/work/observe.yaml', '--run-dir', '/work/denied'] + extra, env)
         assert denied.returncode == 75
         assert not Path('/work/child.json').exists()
