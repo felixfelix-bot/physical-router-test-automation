@@ -1,3 +1,53 @@
+# Managed lifecycle trial — PASSED end to end (2026-11-04)
+
+One lifecycle-mode `systemd_smoke.py` service on `89036b3`, launcher exit 0.
+Canonical parent manifest re-verified before launch:
+`280a382e…f751f` (6,999 rows). The frozen lifecycle manifest inherited from the
+previous attempt was **stale by exactly the two files the identity fix touched**
+(`scripts/run-profile.py`, `tests/conftest.py`); rebuilt one-to-one from it with
+only those two rows re-pinned to HEAD and every other row re-hashed unchanged,
+producing `prta-lifecycle-manifest-v4.json` (6,947 rows, sha256
+`5f2ee06a329bf2e47b8085b81a0e2670df2e991359f9b04d902dcd0526575fbe`). No row was
+added, dropped or re-targeted; the launcher re-verified all 6,947 staged files.
+
+Verbatim runner results, all from the trusted `_SYSTEMD_INVOCATION_ID` journal,
+InvocationID `54096c27c5844db7be1dcb132b5723ee`:
+
+- Unauthorized observe-only manifest: `{"unauthorized": "PASS", "rc": 75,
+  "child": false, "allocations": 0}` — rc 75, no child record, no allocation,
+  no run directory. Stderr: `ADMISSION REFUSED: action_not_permitted: runner
+  requires acquire and release permissions`.
+- Authorized `--fleet-manifest --no-dut --preflight=off`: runner exit **0**,
+  `1 passed in 5.74s`, JUnit parsed pass count **1**, no failure/error/skipped.
+  Owner agreement is exact across all three: claim
+  `trial/prta-20261104T013520Z-trial-unknown-4a37b31a7bfd2b6f`, fixture
+  `owner` (child.json) the same string, and post-run `owner_after: ""`.
+- `release.json`: `{"run_id": "20261104T013520Z-trial-unknown", "state":
+  "clean_released", "reason": "released_confirmed", "detail": "place 'empty'
+  is free after release", "place": "empty", "owner_after": "", "clean": true,
+  "review": false}`; authority `states: ["released"]`.
+- Terminal, same invocation: `Result=success`, `ExecMainCode=1`,
+  `ExecMainStatus=0`, `ActiveState=active`, `SubState=exited`, positive ordered
+  monotonic start/exit, live ID == terminal ID.
+- Cleanup ordering: `cleanup=cgroup_removed` and `staging_removed=true`; cgroup
+  gone before `/var/lib/prta-smoke-f39144bf74f1` was deleted. Independent
+  readback after the fact: `LoadState=not-found`, `ActiveState=inactive`, cgroup
+  path absent, root absent, no unit files.
+
+Evidence: `evidence/managed-runner-trial/lifecycle-v4/{evidence,manifest,
+independent-cleanup}.json` committed; raw launcher log
+`~/reports/reviews/prta-lifecycle-v4.log`, condensed
+`prta-lifecycle-v4-result.json`, rebuilt manifest
+`~/reports/reviews/prta-lifecycle-manifest-v4.json(.sha256)`.
+
+Not a hostile-concurrency solution. Remaining gaps, unproven: lease renewal and
+expiry fencing (nothing re-checks the lease mid-run, so an expired lease followed
+by another run's acquire is untested); concurrent same-place contention (two runs
+racing acquire is untested — only the per-run owner digest is proven unique);
+crash/disconnect release (no test that a killed runner's claim is reclaimed);
+the point-in-time cgroup/path reuse race in cleanup; and no independent
+completed-code review of the identity fix.
+
 # labgrid `create` hang — diagnosed and fixed; next blocker exposed (2026-11-04)
 
 The 65 s `labgrid-client -p empty create` timeout is **proven**: `TasksMax` is a

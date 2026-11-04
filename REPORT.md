@@ -1,3 +1,31 @@
+# Managed lifecycle trial — PASSED (2026-11-04, supersedes the failure below)
+
+Same harness, same isolation, `HEAD 89036b3`. One service
+`prta-smoke-f39144bf74f1.service`, InvocationID
+`54096c27c5844db7be1dcb132b5723ee`, launcher exit 0, no retry.
+
+Pre-launch: canonical parent `280a382e…f751f` re-verified (6,999 rows). The
+frozen lifecycle manifest was stale in exactly the two files the identity fix
+touched; rebuilt one-to-one into `prta-lifecycle-manifest-v4.json` (6,947 rows,
+sha256 `5f2ee06a…75fbe`) with only `scripts/run-profile.py` and
+`tests/conftest.py` re-pinned; launcher re-verified every staged file.
+
+Actual results:
+`unauthorized {"unauthorized": "PASS", "rc": 75, "child": false,
+"allocations": 0}`; authorized runner rc **0**, `1 passed`, JUnit pass count
+**1**; claim owner == child `owner` ==
+`trial/prta-20261104T013520Z-trial-unknown-4a37b31a7bfd2b6f`; `owner_after ""`;
+`release.json` `state=clean_released reason=released_confirmed clean=true
+review=false`; authority `states ["released"]`; terminal `Result=success
+ExecMainCode=1 ExecMainStatus=0 active/exited` on the same invocation; cgroup
+removed before staging deletion; independent readback `LoadState=not-found`,
+cgroup and root absent.
+
+Unexercised and still required before any fencing claim: lease renewal and
+expiry fencing, concurrent same-place contention, crash/disconnect release, the
+cleanup cgroup/path reuse race, and an independent completed-code review of the
+identity fix. No hardware, SSH, VM, install or host configuration was touched.
+
 # Actual managed lifecycle attempt — FAILED before runner (2026-11-04)
 
 One bounded service executed; coordinator genuinely reported ready on private

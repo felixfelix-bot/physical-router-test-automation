@@ -1,0 +1,11 @@
+{
+ "unit": "prta-smoke-f39144bf74f1.service",
+ "root": "/var/lib/prta-smoke-f39144bf74f1",
+ "unit_loadstate_active": [
+  "LoadState=not-found",
+  "ActiveState=inactive"
+ ],
+ "cgroup_path": "/sys/fs/cgroup/system.slice/prta-smoke-f39144bf74f1.service",
+ "cgroup_exists": false,
+ "root_exists": false
+}
