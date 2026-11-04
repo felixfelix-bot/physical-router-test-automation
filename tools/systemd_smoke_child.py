@@ -33,19 +33,41 @@ def console_command(name):
     return ['/runtime/bin/python3', '-I', '-B', '/runtime/bin/' + name, '--help']
 
 
+def parser_command():
+    return ['/runtime/bin/python3', '-I', '-B', '-m', 'pytest',
+            '-p', 'labgrid.pytestplugin', '-p', 'pytest_html.plugin',
+            '--noconftest', '-c', '/dev/null', '--lg-env', '/work/unused.yaml',
+            '--html', '/work/unused.html', '--self-contained-html', '--help']
+
+
+def reviewed_help(command, **kwargs):
+    # No arbitrary commands, environment dumps or user-supplied arguments.
+    if command not in (console_command('labgrid-client'), parser_command()):
+        raise ValueError('Unreviewed diagnostic command')
+    try:
+        return subprocess.run(command, check=True, capture_output=True, text=True,
+                              timeout=15, **kwargs)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        record = {'argv': command, 'exit': getattr(exc, 'returncode', None),
+                  'timeout': isinstance(exc, subprocess.TimeoutExpired)}
+        for name in ('stdout', 'stderr'):
+            value = getattr(exc, name, None) or ''
+            if isinstance(value, bytes):
+                value = value.decode('utf-8', errors='replace')
+            record[name] = value[-8192:]
+            record[name + '_truncated'] = len(value) > 8192
+        print(json.dumps(record), flush=True)
+        raise
+
+
 def parser_probe():
     import sqlite3
     import labgrid
     import pytest_html
     assert sqlite3.connect(':memory:').execute('select 1').fetchone() == (1,)
-    client = subprocess.run(console_command('labgrid-client'), check=True,
-                            capture_output=True, text=True, timeout=15)
-    command = ['/runtime/bin/python3', '-I', '-B', '-m', 'pytest',
-               '-p', 'labgrid.pytestplugin', '-p', 'pytest_html.plugin',
-               '--noconftest', '-c', '/dev/null', '--lg-env', '/work/unused.yaml',
-               '--html', '/work/unused.html', '--self-contained-html', '--help']
-    parser = subprocess.run(command, check=True, capture_output=True, text=True,
-                            timeout=15, env={**os.environ, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'})
+    client = reviewed_help(console_command('labgrid-client'))
+    command = parser_command()
+    parser = reviewed_help(command, env={**os.environ, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'})
     for flag in ('--lg-env', '--html', '--self-contained-html'):
         assert flag in parser.stdout, flag
     print(json.dumps({'parser': 'PASS', 'sqlite3': sqlite3.sqlite_version,

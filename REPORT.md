@@ -1,3 +1,43 @@
+## Parser diagnostic milestone — exact blocker recovered (2026-11-04)
+
+Existing local evidence was inspected first: it contains only CalledProcessError;
+the captured streams were discarded. One new same-policy parser probe ran after
+reviewing the child and adding an observed RED regression for missing diagnostics.
+No second live run was attempted.
+
+Actual stderr (not inferred):
+```
+FileNotFoundError: [Errno 2] No such file or directory: '/work/unused.yaml'
+... _pytest/helpconfig.py:173: config._do_configure()
+... labgrid/pytestplugin/hooks.py:89: env = Environment(config_file=lg_env)
+labgrid.exceptions.NoConfigFoundError: configuration file '/work/unused.yaml' could not be found
+```
+This is a probe-design blocker, not missing package data: pytest --help invokes
+pytest_configure, and the explicit --lg-env value names a deliberately nonexistent
+file. No staging/package change was guessed. Next specific step: review a fixed
+empty labgrid YAML fixture (no targets/resources/imports), or use the existing
+options-only parse seam instead of --help; test its side effects offline before
+separately authorizing another managed run. Current parser readiness remains FAILED.
+
+Diagnostics now emit exact reviewed argv, exit status, bounded trailing stdout and
+stderr (8192 characters each, truncation flags) to the journal captured in evidence.
+Timeouts also emit diagnostics and re-raise. Only the fixed client/pytest help
+commands are permitted; no environment dump or arbitrary/user arguments. This is
+not a general-purpose secret sanitizer; safety relies on the unchanged secret-free
+sandbox and fixed inputs. Exceptions remain nonzero.
+
+Unit prta-smoke-f273a5dfb874.service returned exit 1; protection assertions passed.
+Cleanup: cgroup_removed, staging_removed=true, final LoadState=not-found.
+Raw evidence: evidence/managed-runner-trial/parser-diagnostics/evidence.json;
+launcher output: parser-diagnostics-output.txt (local evidence, not published).
+-I, root read-only sealing, private work, policy and cgroup cleanup unchanged.
+No installs, hardware/SSH/VM/coordinator or existing quarantine changes.
+
+Tests: observed RED JSONDecodeError on empty diagnostic output, then GREEN;
+32 harness tests + 3 parser tests + 3 diagnostics tests passed (38 total).
+Only the original diagnostic-loss regression has an observed RED; timeout and
+allowlist cases are added GREEN coverage. Full hardware suite intentionally NOT RUN.
+
 ## Package-discovery retry — parser FAILED (2026-11-04)
 
 One authorized same-policy retry executed; STOP on new error, no further service.
