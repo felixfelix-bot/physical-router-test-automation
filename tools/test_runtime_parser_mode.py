@@ -13,13 +13,15 @@ class ParserModeTests(unittest.TestCase):
 
     def test_normal_is_not_timeout(self):
         normal = dict(Result='success', ExecMainCode='1', ExecMainStatus='0',
-                      ActiveState='inactive', SubState='dead')
-        harness.validate_result(normal, 'parser')
+                      ActiveState='active', SubState='exited', InvocationID='abc123',
+                      LoadState='loaded', ExecMainPID='42', ExecMainStartTimestampMonotonic='100',
+                      ExecMainExitTimestampMonotonic='200')
+        harness.validate_result(normal, 'parser', 'abc123')
         with self.assertRaises(AssertionError):
-            harness.validate_result(normal, 'adversarial')
+            harness.validate_result(normal, 'adversarial', 'abc123')
         for key, value in [('Result', 'timeout'), ('ExecMainStatus', '1'), ('ActiveState', 'failed')]:
             with self.assertRaises(AssertionError):
-                harness.validate_result({**normal, key: value}, 'parser')
+                harness.validate_result({**normal, key: value}, 'parser', 'abc123')
 
     def test_parser_checks_real_flags(self):
         from types import SimpleNamespace

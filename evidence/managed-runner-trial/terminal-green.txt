@@ -1,0 +1,62 @@
+test_empty_allowed (test_systemd_smoke.IdentityTests.test_empty_allowed) ... ok
+test_every_uid_gid_slot_rejected (test_systemd_smoke.IdentityTests.test_every_uid_gid_slot_rejected) ... ok
+test_other_groups_rejected (test_systemd_smoke.IdentityTests.test_other_groups_rejected) ... ok
+test_primary_group_allowed (test_systemd_smoke.IdentityTests.test_primary_group_allowed) ... ok
+test_explicit_denials (test_systemd_smoke.PathDenialTests.test_explicit_denials) ... ok
+test_readable_forbidden_file (test_systemd_smoke.PathDenialTests.test_readable_forbidden_file) ... ok
+test_unexpected_eio (test_systemd_smoke.PathDenialTests.test_unexpected_eio) ... ok
+test_corrupt_loopback_payloads_rejected_and_sockets_closed (test_systemd_smoke_child.ChildMainTests.test_corrupt_loopback_payloads_rejected_and_sockets_closed) ... ok
+test_each_available_executable_rejected_even_with_nonzero_exit (test_systemd_smoke_child.ChildMainTests.test_each_available_executable_rejected_even_with_nonzero_exit) ... ok
+test_each_excluded_path_rejected_when_present (test_systemd_smoke_child.ChildMainTests.test_each_excluded_path_rejected_when_present) ... ok
+test_each_nonzero_capability_rejected (test_systemd_smoke_child.ChildMainTests.test_each_nonzero_capability_rejected) ... ok
+test_each_serial_device_family_rejected (test_systemd_smoke_child.ChildMainTests.test_each_serial_device_family_rejected) ... ok
+test_each_writable_path_closed_and_rejected (test_systemd_smoke_child.ChildMainTests.test_each_writable_path_closed_and_rejected) ... ok
+test_fork_child_detaches_reports_and_exits_without_parent_pass (test_systemd_smoke_child.ChildMainTests.test_fork_child_detaches_reports_and_exits_without_parent_pass) ... ok
+test_no_new_privileges_required (test_systemd_smoke_child.ChildMainTests.test_no_new_privileges_required) ... ok
+test_only_single_loopback_interface_allowed (test_systemd_smoke_child.ChildMainTests.test_only_single_loopback_interface_allowed) ... ok
+test_parent_reports_success_after_roundtrip_and_fork (test_systemd_smoke_child.ChildMainTests.test_parent_reports_success_after_roundtrip_and_fork) ... ok
+test_parser_mode_never_forks (test_systemd_smoke_child.ChildMainTests.test_parser_mode_never_forks) ... ok
+test_read_only_denial_errnos_allowed (test_systemd_smoke_child.ChildMainTests.test_read_only_denial_errnos_allowed) ... ok
+test_sensitive_environment_names_rejected (test_systemd_smoke_child.ChildMainTests.test_sensitive_environment_names_rejected) ... ok
+test_unexpected_execution_error_propagates (test_systemd_smoke_child.ChildMainTests.test_unexpected_execution_error_propagates) ... ok
+test_unexpected_read_only_errno_rejected (test_systemd_smoke_child.ChildMainTests.test_unexpected_read_only_errno_rejected) ... ok
+test_manifest_rejects_unsafe_paths_and_wrong_hash (test_systemd_smoke_orchestration.HelpersTests.test_manifest_rejects_unsafe_paths_and_wrong_hash) ... ok
+test_run_status_and_timeout (test_systemd_smoke_orchestration.HelpersTests.test_run_status_and_timeout) ... ok
+test_capture_before_stop_and_reset (test_systemd_smoke_orchestration.OrchestrationTests.test_capture_before_stop_and_reset) ... ok
+test_child_evidence_required (test_systemd_smoke_orchestration.OrchestrationTests.test_child_evidence_required) ... ok
+test_errors_preserve_evidence (test_systemd_smoke_orchestration.OrchestrationTests.test_errors_preserve_evidence) ... ok
+test_expected_timeout_and_cleanup (test_systemd_smoke_orchestration.OrchestrationTests.test_expected_timeout_and_cleanup) ... ok
+test_no_delete_without_complete_live_evidence (test_systemd_smoke_orchestration.OrchestrationTests.test_no_delete_without_complete_live_evidence) ... ok
+test_normal_parser_exit_and_cleanup (test_systemd_smoke_orchestration.OrchestrationTests.test_normal_parser_exit_and_cleanup) ... ok
+test_poll_deadline_is_not_success (test_systemd_smoke_orchestration.OrchestrationTests.test_poll_deadline_is_not_success) ... ok
+test_populated_or_nonempty_is_quarantined (test_systemd_smoke_orchestration.OrchestrationTests.test_populated_or_nonempty_is_quarantined) ... ok
+test_terminal_identity_and_stale_pass_refused (test_systemd_smoke_orchestration.OrchestrationTests.test_terminal_identity_and_stale_pass_refused) ... ok
+test_wrong_unit_results_rejected (test_systemd_smoke_orchestration.OrchestrationTests.test_wrong_unit_results_rejected) ... ok
+test_each_proof_field_required_independently (test_systemd_smoke_terminal.TerminalTests.test_each_proof_field_required_independently) ... ok
+test_saved_default_is_not_terminal_proof (test_systemd_smoke_terminal.TerminalTests.test_saved_default_is_not_terminal_proof) ... ok
+test_console_command_has_no_host_or_direct_exec (test_runtime_parser_mode.ParserModeTests.test_console_command_has_no_host_or_direct_exec) ... ok
+test_normal_is_not_timeout (test_runtime_parser_mode.ParserModeTests.test_normal_is_not_timeout) ... ok
+test_parser_checks_real_flags (test_runtime_parser_mode.ParserModeTests.test_parser_checks_real_flags) ... {"parser": "PASS", "sqlite3": "3.45.1", "imports": ["labgrid", "pytest_html"], "client_help_exit": 0, "pytest_help_exit": 0, "argv": ["/runtime/bin/python3", "-I", "-B", "-m", "pytest", "-p", "labgrid.pytestplugin", "-p", "pytest_html.plugin", "--noconftest", "-c", "/dev/null", "--lg-env", "/source/empty-labgrid.yaml", "--html", "/work/unused.html", "--self-contained-html", "--junitxml", "/work/unused.xml", "--help"]}
+ok
+
+----------------------------------------------------------------------
+Ran 39 tests in 3.202s
+
+OK
+{
+  "files": {
+    "systemd_smoke.py": {
+      "hit": 141,
+      "executable": 185
+    },
+    "systemd_smoke_child.py": {
+      "hit": 93,
+      "executable": 184
+    }
+  },
+  "aggregate": [
+    234,
+    369
+  ],
+  "percent": 63.41463414634146
+}

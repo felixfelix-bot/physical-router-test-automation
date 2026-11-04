@@ -13,7 +13,7 @@ Exactly ONE live service, unchanged policy, readonly empty fixture, private /wor
 
 Overall launcher exit 1: STOPPED, no retry or policy adjustment. Actual final assertion:
 `AssertionError: {'Result': 'success', 'ExecMainCode': '0', 'ExecMainStatus': '0', 'ActiveState': 'inactive', 'SubState': 'dead'}`
-The launcher expected ExecMainCode=1; systemd reported 0 after successful deactivation. Child parser readiness checks passed, but end-to-end launcher is NOT qualified. No hardware/SSH/VM/coordinator/install exercised.
+The launcher expected ExecMainCode=1; the polled properties reported 0, but lacked invocation/load/exit-time proof and the subsequent stop found the unit unloaded. This is not an authoritative exit-code observation; see [terminal lifecycle diagnosis](terminal-evidence-lifecycle.md). Child parser readiness checks passed, but end-to-end launcher is NOT qualified. No hardware/SSH/VM/coordinator/install exercised.
 
 Tests: observed RED before fix (`selection-red.txt`); 2 selection tests and 35 existing smoke tests PASS. Coverage systemd_smoke.py 99% (153/154 statements), all added guard lines covered. Raw logs and service evidence are adjacent to this manifest.
 

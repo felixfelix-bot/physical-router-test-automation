@@ -1,3 +1,13 @@
+# Terminal lifecycle repair — OFFLINE ONLY, live qualification pending
+
+See [source-cited diagnosis and next trial](docs/terminal-evidence-lifecycle.md).
+Verified remote base be8a2a4693815f79b2a9bcb3e811c319332d511c. Saved child
+parser/probe success stands; full harness success does not. Code0 is not an exit
+proof; automatic unloading is supported, explicit stop/reset occurs later.
+Parser retention + same-invocation terminal capture persisted before stop;
+invocation-scoped PASS checks; cgroup cleanup preserved. 39 offline tests PASS,
+manager statement coverage 156/169 (92.31%). No new live execution or install.
+
 # Private work trial — FAILED, parser NOT ready (2026-11-04)
 
 See `docs/private-work-result.md` and `evidence/managed-runner-trial/private-work-live/`.

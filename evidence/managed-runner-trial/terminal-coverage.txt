@@ -1,0 +1,16 @@
+....................................
+----------------------------------------------------------------------
+Ran 36 tests in 1.369s
+
+OK
+..{"parser": "PASS", "sqlite3": "3.45.1", "imports": ["labgrid", "pytest_html"], "client_help_exit": 0, "pytest_help_exit": 0, "argv": ["/runtime/bin/python3", "-I", "-B", "-m", "pytest", "-p", "labgrid.pytestplugin", "-p", "pytest_html.plugin", "--noconftest", "-c", "/dev/null", "--lg-env", "/source/empty-labgrid.yaml", "--html", "/work/unused.html", "--self-contained-html", "--junitxml", "/work/unused.xml", "--help"]}
+.
+----------------------------------------------------------------------
+Ran 3 tests in 0.531s
+
+OK
+Name                     Stmts   Miss  Cover   Missing
+------------------------------------------------------
+tools/systemd_smoke.py     169     13    92%   56-67, 210
+------------------------------------------------------
+TOTAL                      169     13    92%
