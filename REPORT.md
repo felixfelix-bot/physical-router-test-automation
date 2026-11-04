@@ -1,3 +1,41 @@
+# Python 3.12 offline dependency audit — NOT qualified
+
+The existing project interpreter `/home/c08r4d0r/repos/physical-router-test-automation/.venv/bin/python`
+is CPython 3.12.3. Installed pytest 9.1.1, pytest-html 4.2.0,
+pytest-metadata 3.1.1 and labgrid 26.0.1.
+
+Actual pytest parser accepted the runner's JUnit, HTML, self-contained HTML,
+results, no-DUT and preflight-off flags. Plugin autoload was disabled; only HTML
+and metadata were enabled. The repository's option-registration function was
+extracted via AST, not imported as conftest. No session hooks, collection,
+preflight, source imports, coordinator, hardware or privileged trial ran.
+The reviewed 3.11 interpreter again rejected the HTML flags (pytest usage error).
+Two focused offline inventory tests passed; full hardware suite intentionally
+not run. No cross-family review or full coverage claim.
+
+**New blocking integrity finding:** installed `pyserial-labgrid` RECORD hashes
+DO NOT match `serial/__init__.py` and `serial/rfc2217.py`. No repair/install was
+attempted. The HTML parser blocker is resolved for 3.12, but the dependency
+integrity gate is NOT closed. Do not stage or execute this environment yet.
+
+`evidence/managed-runner-trial/python312-inventory.json` records 7,018 files,
+installed package metadata and requirements, current SHA256 pins, full stdlib,
+project lib/scripts source, package data/metadata and ldd-resolved native libs.
+This is a conservative installed superset, NOT the staging manifest schema:
+no destination mapping is claimed. RECORD checks reveal mismatches even though
+new current hashes can be computed. An audit invocation returns nonzero for
+these errors. Optional extra dependency activation and external executable
+closure remain unqualified. Source imports have deliberately not been exercised.
+
+Remaining: explain/resolve the two installed RECORD mismatches without installs
+or cross-version composition; audit actual source import side effects and
+optional-extra requirements; authorize a verified staging mapping; author and
+review the venue_only ownership child; safe collection preflight; then the
+separately authorized managed trial. No child or coordinator was executed and
+the approved trial remains unused. This bounded milestone stops on integrity,
+not on a claim that the package list proves a complete working runtime.
+
+
 # Managed runner trial preflight — blocked, no live attempt (2026-11-04)
 
 Own branch `pr/managed-runner-trial` from reviewed `2aa132b` (includes `c07aa605`).
