@@ -1,4 +1,15 @@
-# Offline salvage — no live retry (2026-11-04)
+# Private work trial — FAILED, parser NOT ready (2026-11-04)
+
+See `docs/private-work-result.md` and `evidence/managed-runner-trial/private-work-live/`.
+One bounded temporary service failed before mount/work probes with exact stderr:
+`ModuleNotFoundError: No module named 'labgrid'`. Result=exit-code, status=1;
+not timeout, not success. No retry. Live InvocationID/cgroup captured;
+cgroup removed before staging deletion, staging_removed=true, unit not-found.
+43 offline tests passed, changed statements 42/46 (91.30%). Private /work
+policy is 32MiB tmpfs, UID/GID65534, 0700, nosuid,nodev,noexec; no host bind.
+Live mountinfo/statvfs, SQLite, results and parser checks remain UNVERIFIED.
+
+# Offline salvage — historical baseline (2026-11-04)
 
 Static `targets: {}` is now explicitly staged, hashed and sealed as
 `/source/empty-labgrid.yaml`; parser only reads it. Existing drafts retained.
