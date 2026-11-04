@@ -13,7 +13,7 @@ import systemd_smoke as smoke
 
 
 class OrchestrationTests(unittest.TestCase):
-    def scenario(self, fault=None, result='timeout', cleanup='removed'):
+    def scenario(self, fault=None, result='timeout', cleanup='removed', mode='adversarial'):
         with tempfile.TemporaryDirectory() as td, contextlib.ExitStack() as stack:
             base = Path(td)
             root = base / 'roots' / 'prta-smoke-0123456789ab'
@@ -29,6 +29,7 @@ class OrchestrationTests(unittest.TestCase):
             unit = root.name + '.service'
             live = f'InvocationID=abc123\nActiveState=active\nControlGroup=/system.slice/{unit}\n'
             journal = json.dumps({'probe': 'PASS'}) + '\n' + json.dumps({'descendant_pid': 43, 'sid': 43, 'cgroup': '0::/system.slice/' + unit}) + '\nKilling process 43 (python3) with signal SIGKILL.'
+            if mode == 'parser': journal = json.dumps({'probe': 'PASS', 'parser': 'PASS'})
             if fault == 'sid': journal = journal.replace('"sid": 43', '"sid": 99')
             if fault == 'child-cgroup': journal = journal.replace('0::/system.slice/', '0::/other/')
             if fault == 'membership': (cg / 'cgroup.procs').write_text('42\n')
@@ -58,6 +59,8 @@ class OrchestrationTests(unittest.TestCase):
                         if fault == 'events': (cg / 'cgroup.events').unlink()
                         return live
                     if fault == 'deadline': return 'ActiveState=active\nExecMainStatus=0\n'
+                    if mode == 'parser' and result == 'success':
+                        return 'Result=success\nExecMainCode=1\nExecMainStatus=0\nActiveState=inactive\nSubState=dead\n'
                     return f'Result={result}\nExecMainCode=1\nExecMainStatus=0\nActiveState=failed\nSubState=failed\n'
                 if 'stop' in args:
                     if fault == 'stop': raise RuntimeError('stop unavailable')
@@ -77,7 +80,7 @@ class OrchestrationTests(unittest.TestCase):
             stack.enter_context(patch.object(Path, 'stat', stat))
             stack.enter_context(patch.object(smoke, 'run', side_effect=run))
             stack.enter_context(patch.object(smoke.uuid, 'uuid4', return_value=types.SimpleNamespace(hex='0123456789ab')))
-            stack.enter_context(patch('sys.argv', ['smoke', str(inv), str(out)]))
+            stack.enter_context(patch('sys.argv', ['smoke', str(inv), str(out), '--mode', mode]))
             ticks = iter(range(0, 1000, 20))
             stack.enter_context(patch.object(smoke.time, 'monotonic', side_effect=lambda: next(ticks)))
             stack.enter_context(patch.object(smoke.time, 'sleep'))
@@ -87,6 +90,14 @@ class OrchestrationTests(unittest.TestCase):
             except Exception as exc: error = exc
             evidence = json.loads((out / 'evidence.json').read_text()) if (out / 'evidence.json').exists() else None
             return error, evidence, any('/usr/bin/rm' in c for c in calls), root.exists()
+
+    def test_normal_parser_exit_and_cleanup(self):
+        error, ev, deleted, exists = self.scenario(mode='parser', result='success')
+        self.assertIsNone(error)
+        self.assertTrue(deleted)
+        self.assertFalse(exists)
+        self.assertEqual(ev['mode'], 'parser')
+        self.assertIsInstance(self.scenario(mode='parser')[0], AssertionError)
 
     def test_expected_timeout_and_cleanup(self):
         for cleanup in ('removed', 'empty'):

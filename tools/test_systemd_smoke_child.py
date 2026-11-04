@@ -73,7 +73,7 @@ class ProbeDouble:
             self.paths[name] = path
         return self.paths[name]
 
-    def run(self):
+    def run(self, mode='adversarial'):
         with ExitStack() as stack:
             stack.enter_context(patch.dict(sys.modules, {
                 name: types.ModuleType(name) for name in ('labgrid', 'pytest')}))
@@ -81,7 +81,7 @@ class ProbeDouble:
                 stack.enter_context(patch.object(child, name, getattr(self, name)))
             stack.enter_context(patch.object(child, 'Path', self.path))
             stack.enter_context(redirect_stdout(self.output))
-            child.main()
+            child.main(mode)
 
     def records(self):
         return [json.loads(line) for line in self.output.getvalue().splitlines()]
@@ -95,6 +95,15 @@ class ChildMainTests(unittest.TestCase):
             self.assertIn(message, str(caught.exception))
         probe.os.fork.assert_not_called()
         self.assertFalse(any(row.get('probe') == 'PASS' for row in probe.records()))
+
+    def test_parser_mode_never_forks(self):
+        probe = ProbeDouble()
+        with patch.object(child, 'parser_probe') as parser:
+            probe.run('parser')
+        parser.assert_called_once_with()
+        probe.os.fork.assert_not_called()
+        probe.time.sleep.assert_called_once_with(3)
+        self.assertEqual(probe.records()[-1], {'probe': 'PASS', 'mode': 'parser'})
 
     def test_parent_reports_success_after_roundtrip_and_fork(self):
         probe = ProbeDouble()

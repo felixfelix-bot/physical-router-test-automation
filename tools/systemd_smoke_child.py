@@ -27,7 +27,34 @@ def path_denial(path):
     raise AssertionError('forbidden path accessible: ' + str(path))
 
 
-def main():
+def console_command(name):
+    if name not in ('labgrid-client', 'labgrid-coordinator'):
+        raise ValueError('Untrusted console script')
+    return ['/runtime/bin/python3', '-I', '-B', '/runtime/bin/' + name, '--help']
+
+
+def parser_probe():
+    import sqlite3
+    import labgrid
+    import pytest_html
+    assert sqlite3.connect(':memory:').execute('select 1').fetchone() == (1,)
+    client = subprocess.run(console_command('labgrid-client'), check=True,
+                            capture_output=True, text=True, timeout=15)
+    command = ['/runtime/bin/python3', '-I', '-B', '-m', 'pytest',
+               '-p', 'labgrid.pytestplugin', '-p', 'pytest_html.plugin',
+               '--noconftest', '-c', '/dev/null', '--lg-env', '/work/unused.yaml',
+               '--html', '/work/unused.html', '--self-contained-html', '--help']
+    parser = subprocess.run(command, check=True, capture_output=True, text=True,
+                            timeout=15, env={**os.environ, 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1'})
+    for flag in ('--lg-env', '--html', '--self-contained-html'):
+        assert flag in parser.stdout, flag
+    print(json.dumps({'parser': 'PASS', 'sqlite3': sqlite3.sqlite_version,
+                      'imports': [labgrid.__name__, pytest_html.__name__],
+                      'client_help_exit': client.returncode,
+                      'pytest_help_exit': parser.returncode, 'argv': command}), flush=True)
+
+
+def main(mode='adversarial'):
     import labgrid
     import pytest
 
@@ -75,6 +102,11 @@ def main():
             peer.sendall(b'ok')
             assert client.recv(2) == b'ok'
     print(json.dumps({'reached': 'serial/environment exclusions, read-only source/runtime, loopback roundtrip'}), flush=True)
+    if mode == 'parser':
+        parser_probe()
+        print(json.dumps({'probe': 'PASS', 'mode': mode}), flush=True)
+        time.sleep(3)  # retain a bounded live observation window
+        return
     pid = os.fork()
     if pid == 0:
         os.setsid()
@@ -88,4 +120,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mode', choices=('adversarial', 'parser'), default='adversarial')
+    main(parser.parse_args().mode)

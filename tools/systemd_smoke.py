@@ -50,10 +50,19 @@ def validate(rows):
         assert len(data) == row['bytes']
 
 
+def validate_result(props, mode):
+    expected = {'Result': 'timeout', 'ExecMainCode': '1', 'ExecMainStatus': '0',
+                'ActiveState': 'failed', 'SubState': 'failed'}
+    if mode == 'parser':
+        expected.update(Result='success', ActiveState='inactive', SubState='dead')
+    assert props == expected, props
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('inventory', type=Path)
     parser.add_argument('evidence', type=Path)
+    parser.add_argument('--mode', choices=('adversarial', 'parser'), default='adversarial')
     args = parser.parse_args()
     args.evidence.mkdir(parents=True, exist_ok=False)
     rows = json.loads(args.inventory.read_text())['files']
@@ -101,6 +110,9 @@ def main():
     for key, value in {**POLICY, 'RootDirectory': str(root)}.items():
         command += ['-p', key + '=' + value]
     command += ['/runtime/bin/python3', '-I', '-B', '/source/systemd_smoke_child.py']
+    command += ['--mode', args.mode]
+    evidence['command'] = command
+    evidence['mode'] = args.mode
     cg = None
     try:
         evidence['launch'] = run(*command)
@@ -141,8 +153,11 @@ def main():
     print(json.dumps(evidence, indent=2))
     assert evidence['cleanup'] != 'QUARANTINE'
     result_props = dict(line.split('=', 1) for line in evidence['result'].splitlines() if '=' in line)
-    assert result_props == {'Result': 'timeout', 'ExecMainCode': '1', 'ExecMainStatus': '0', 'ActiveState': 'failed', 'SubState': 'failed'}
+    validate_result(result_props, args.mode)
     assert '"probe": "PASS"' in evidence['journal']
+    if args.mode == 'parser':
+        assert '"parser": "PASS"' in evidence['journal']
+        return
     records = [json.loads(line[line.index('{'):]) for line in evidence['journal'].splitlines() if '{' in line and ('"descendant_pid"' in line or '"probe"' in line)]
     descendant = next(r for r in records if 'descendant_pid' in r)
     assert descendant['sid'] == descendant['descendant_pid']
