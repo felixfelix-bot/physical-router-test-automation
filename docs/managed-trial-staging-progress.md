@@ -1,29 +1,28 @@
-# Managed trial staging progress — NOT executed
+# Mapping repair milestone — runtime NOT verified
 
-Serial provenance blocker is resolved only for the exact two approved paths;
-original METADATA/RECORD stay untouched. `staging-proposal.json` maps and verifies
-6,984 installed/current files and explicitly omits 34 startup/console entries.
-This is a **partial, unqualified proposal**, not a launchable closure.
+Installed `readelf -W -l -d` inspected every selected ELF. Mapping now resolves
+all selected DT_NEEDED names through pinned SONAME providers and maps each
+PT_INTERP path to the pinned interpreter bytes. Aliases are regular-file copy
+rows, not symlinks; traversal and differing-byte provider/target collisions fail
+closed. No entire host library directory is mounted or copied.
 
-Selected actual Python 3.12 imports returned exit 0: labgrid.remote.coordinator
-and the real tests/conftest.py (via runpy with project path). optimize=0 verified.
-No coordinator was started and no serial resource was activated. These host
-imports do not establish isolated runtime import success or safe collection.
+Labgrid client/coordinator scripts are copied unchanged to `/runtime/bin/`.
+Their original shebang is NOT relocated: use `/runtime/bin/python3 -I -B
+/runtime/bin/labgrid-client` (or coordinator) explicitly. Direct exec is NOT ready.
+Original source hashes and distribution provenance remain unchanged.
 
-Concrete remaining mapping defect: `_sqlite3.cpython-312-x86_64-linux-gnu.so`
-DT_NEEDED is `libsqlite3.so.0`, whereas the installed inventory resolves to
-`/usr/lib/x86_64-linux-gnu/libsqlite3.so.0.8.6`; proposal currently retains only
-that resolved filename. SONAME aliases, ELF interpreter target and relocated
-console entrypoints must be mapped before launching. This is a staging defect,
-not a missing installed dependency and needs no install or relaxed policy.
+Observed RED: native loader mapping test failed on absent libsqlite3.so.0.
+GREEN: four focused tests pass. Conservative aggregate production coverage via
+stdlib trace: 74/89 executable lines = 83.15%. Includes full real-inventory
+readelf traversal plus rejection cases. Negative tests were added after GREEN;
+they do not have separate observed RED evidence.
 
-The five-minute bounded pass did not reach reviewed ownership-child/orchestrator
-readiness. One authorized trial remains UNUSED. No service/staging root created;
-no cgroup/InvocationID/JUnit/owner/release evidence exists for this pass. No
-quarantine touched. Do not describe imports or mapping tests as runner execution.
-
-Focused manifest tests: 2 passed (mapping, pin rejection, new RECORD error
-rejection, byte drift rejection). Coverage threshold and cold review NOT RUN.
-Next: finish exact runtime aliases/entrypoints, review minimal venue_ownership
-child and real runner orchestration, then one unchanged-isolation 120s service
-trial with unauthorized and authorized assertions plus lifecycle cleanup proof.
+STOP before functional staged verification: existing reviewed systemd harness
+hardcodes the original primitive child and requires its stubborn descendant,
+SIGKILL journal, and timeout result. It does not expose an import/parser-only
+child seam. Running it unchanged would exceed this milestone's probe-only scope;
+changing it needs separate tested/reviewed integration, not an unreviewed inline
+privileged harness. Five-minute repair budget reached. No staged service launched,
+no new cgroup/root created, no coordinator/runner started, original quarantines
+untouched. Actual staged sqlite3/labgrid/pytest-html parser readiness is UNKNOWN.
+The real authorized trial remains unused. Mapping is not runtime qualification.
