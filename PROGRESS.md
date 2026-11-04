@@ -23,7 +23,8 @@ that is an evidence limitation to fix before another run, not an empty-output cl
 
 Implementation banked: lifecycle mode retains protection/manifest/terminal/cleanup
 checks; fixed client entrypoint; explicit venue-only child and actual runner commands;
-all selected static files hash-pinned in lifecycle-v1.json. Review and bound change
+all selected static files hash-pinned in the frozen manifest
+(~/reports/reviews/prta-lifecycle-manifest.json, sha256 9ab9f78a...245). Review and bound change
 justification in docs/lifecycle-trial-review.md. Only RuntimeMaxSec rose from 60 to
 120s; 32MiB work/256MiB memory/16 tasks unchanged. Copied source stayed read-only.
 RED observed on lifecycle terminal test; focused GREEN 18 passed + 42 subtests.
