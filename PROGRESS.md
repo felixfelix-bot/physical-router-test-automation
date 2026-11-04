@@ -1,3 +1,36 @@
+# Actual managed lifecycle attempt — FAILED before runner (2026-11-04)
+
+One bounded service executed; coordinator genuinely reported ready on private
+127.0.0.1:20408 and real SQLite authority was initialized. Empty-place creation
+through installed labgrid-client timed out after 65 seconds. Actual run-profile
+invocations were therefore NOT reached; unauthorized rc75, fixture acquire/release,
+positive assertions, JUnit pass count, allocation release and release.json remain
+UNPROVEN. No retry and no fabricated pass. No resource cause is established;
+TasksMax=16/gRPC thread pressure is a hypothesis only, not a diagnosis.
+
+Unit prta-smoke-9251c1e700fe.service; invocation
+4642f5dec8ef4ca98d5d65e3ffac15a9. Same-invocation terminal observation:
+Result=exit-code, ExecMainCode=1, ExecMainStatus=1, ActiveState=failed,
+SubState=failed. Monotonic start 114223714192, exit 114291961703 (~68.25s).
+Authoritative harness cleanup cgroup_removed, staging_removed=true. Independent
+readback confirmed LoadState=not-found and exact root/cgroup paths absent.
+
+Evidence: /home/c08r4d0r/reports/reviews/prta-lifecycle-actual-v1/evidence.json
+and manifest.json; launcher prta-lifecycle-actual-v1.log alongside directory.
+Captured coordinator log and traceback are in invocation_journal. The timeout
+helper did not persist the timed-out client's partial captured stdout/stderr;
+that is an evidence limitation to fix before another run, not an empty-output claim.
+
+Implementation banked: lifecycle mode retains protection/manifest/terminal/cleanup
+checks; fixed client entrypoint; explicit venue-only child and actual runner commands;
+all selected static files hash-pinned in lifecycle-v1.json. Review and bound change
+justification in docs/lifecycle-trial-review.md. Only RuntimeMaxSec rose from 60 to
+120s; 32MiB work/256MiB memory/16 tasks unchanged. Copied source stayed read-only.
+RED observed on lifecycle terminal test; focused GREEN 18 passed + 42 subtests.
+No whole-orchestrator coverage or independent completed-code review is claimed.
+Remaining: private client readiness timeout diagnosis, both actual runner cases,
+then lease renewal/failure fencing, contention/concurrency and crash-release trials.
+
 # Offline salvage — no live retry (2026-11-04)
 
 Static `targets: {}` is now explicitly staged, hashed and sealed as

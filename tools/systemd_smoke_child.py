@@ -195,6 +195,14 @@ def main(mode='adversarial'):
             peer.sendall(b'ok')
             assert client.recv(2) == b'ok'
     print(json.dumps({'reached': 'serial/environment exclusions, read-only source/runtime, loopback roundtrip'}), flush=True)
+    if mode == 'lifecycle':
+        private_mount_evidence()
+        check_layout()
+        import runpy
+        runpy.run_path('/source/tools/fleet_trial.py', run_name='__main__')
+        print(json.dumps({'probe': 'PASS', 'mode': mode}), flush=True)
+        time.sleep(3)
+        return
     if mode == 'parser':
         private_mount_evidence()
         parser_probe()
@@ -216,5 +224,5 @@ def main(mode='adversarial'):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', choices=('adversarial', 'parser'), default='adversarial')
+    parser.add_argument('--mode', choices=('adversarial', 'parser', 'lifecycle'), default='adversarial')
     main(parser.parse_args().mode)

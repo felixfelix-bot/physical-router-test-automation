@@ -44,7 +44,7 @@ def validate(rows):
         assert target.is_absolute() and '..' not in target.parts
         assert str(target) not in seen
         seen.add(str(target))
-        assert str(target).startswith(('/runtime/', '/lib/', '/lib64/'))
+        assert str(target).startswith(('/runtime/', '/lib/', '/lib64/', '/source/'))
         assert target.name not in ('ssh', 'sh', 'bash', 'scp', 'sftp')
         data = Path(row['source']).read_bytes()
         assert hashlib.sha256(data).hexdigest() == row['sha256']
@@ -75,7 +75,7 @@ def validate_result(props, mode, invocation):
     assert 0 < start <= int(props.get('ExecMainExitTimestampMonotonic', '0')), props
     expected = {'Result': 'timeout', 'ExecMainCode': '1', 'ExecMainStatus': '0',
                 'ActiveState': 'failed', 'SubState': 'failed'}
-    if mode == 'parser':
+    if mode in ('parser', 'lifecycle'):
         expected.update(Result='success', ActiveState='active', SubState='exited')
     assert all(props.get(k) == v for k, v in expected.items()), props
 
@@ -84,12 +84,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('inventory', type=Path)
     parser.add_argument('evidence', type=Path)
-    parser.add_argument('--mode', choices=('adversarial', 'parser'), default='adversarial')
+    parser.add_argument('--mode', choices=('adversarial', 'parser', 'lifecycle'), default='adversarial')
     args = parser.parse_args()
     args.evidence.mkdir(parents=True, exist_ok=False)
     rows = json.loads(args.inventory.read_text())['files']
     # Exclude project code and unrelated editable/virtualenv startup helpers.
-    rows = [r for r in rows if not r['target'].startswith('/source/') and not any(s in r['target'] for s in ('/tollgate_lab/', '/__editable_', '/_virtualenv.py'))]
+    rows = [r for r in rows if (args.mode == 'lifecycle' or not r['target'].startswith('/source/')) and not any(s in r['target'] for s in ('/tollgate_lab/', '/__editable_', '/_virtualenv.py'))]
     validate(rows)
     validate_selection(rows)
     child = Path(__file__).with_name('systemd_smoke_child.py').read_bytes()
@@ -112,8 +112,8 @@ def main():
             data = Path(row['source']).read_bytes()
             assert hashlib.sha256(data).hexdigest() == row['sha256']
             dest.write_bytes(data)
-            dest.chmod(0o555 if data.startswith(b'\x7fELF') else 0o444)
-        (stage / 'source').mkdir()
+            dest.chmod(0o555 if data.startswith(b'\x7fELF') or row['target'] == '/runtime/bin/trial-client' else 0o444)
+        (stage / 'source').mkdir(exist_ok=True)
         (stage / 'source/systemd_smoke_child.py').write_bytes(child)
         (stage / 'source/empty-labgrid.yaml').write_bytes(fixture)
         (stage / 'source/empty-labgrid.yaml').chmod(0o444)
@@ -136,7 +136,9 @@ def main():
     evidence['frozen_manifest_verified'] = True
     command = ['sudo', '-n', '/usr/bin/systemd-run', '--system', '--unit=' + unit, '--service-type=exec']
     # Retain a successful parser unit until its exit metadata is durably captured.
-    lifecycle = {'RemainAfterExit': 'yes'} if args.mode == 'parser' else {}
+    lifecycle = {'RemainAfterExit': 'yes'} if args.mode in ('parser', 'lifecycle') else {}
+    if args.mode == 'lifecycle':
+        lifecycle.update(RuntimeMaxSec='120s')
     for key, value in {**POLICY, **lifecycle, 'RootDirectory': str(root)}.items():
         command += ['-p', key + '=' + value]
     command += ['/runtime/bin/python3', '-I', '-B', '/source/systemd_smoke_child.py']
@@ -159,7 +161,7 @@ def main():
         assert any(p.strip() for p in evidence['live_recursive_procs'].values())
         cg = candidate
         invocation = props['InvocationID']
-        deadline = time.monotonic() + 75
+        deadline = time.monotonic() + (135 if args.mode == 'lifecycle' else 75)
         result = ''
         evidence['live_samples'] = []
         while time.monotonic() < deadline:
@@ -195,6 +197,9 @@ def main():
     result_props = dict(line.split('=', 1) for line in evidence['result'].splitlines() if '=' in line)
     validate_result(result_props, args.mode, invocation)
     assert '"probe": "PASS"' in evidence['invocation_journal']
+    if args.mode == 'lifecycle':
+        assert '"lifecycle": "PASS"' in evidence['invocation_journal']
+        return
     if args.mode == 'parser':
         assert '"parser": "PASS"' in evidence['invocation_journal']
         return

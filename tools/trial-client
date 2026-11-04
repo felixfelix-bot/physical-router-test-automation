@@ -1,0 +1,3 @@
+#!/runtime/bin/python3
+from labgrid.remote.client import main
+main()
