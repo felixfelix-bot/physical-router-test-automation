@@ -56,7 +56,7 @@ class InventoryTests(unittest.TestCase):
         lane = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'ipip6')
         calls = [n for n in ast.walk(lane) if isinstance(n, ast.Call)
                  and isinstance(n.func, ast.Name) and n.func.id == 'query_kernel_state']
-        self.assertEqual(len(calls), 3, 'installed/down/up inventories must be logged')
+        self.assertEqual(len(calls), 4, 'installed/down/up/restored inventories must be collected')
 
 
 if __name__ == '__main__':

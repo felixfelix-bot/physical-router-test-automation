@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class BaselineTests(unittest.TestCase):
     def test_plan_identity_and_mutations(self):
         records = [json.loads(line) for line in
-                   (ROOT / 'results/fips-recovery-slice/packet.log').read_text().splitlines()
+                   (ROOT / 'scripts/fixtures/fips-kernel-observations.jsonl').read_text().splitlines()
                    if line.startswith('{')]
         baseline = next(r['kernel_observations'] for r in records
                         if r.get('tunnel_state') == 'installed')

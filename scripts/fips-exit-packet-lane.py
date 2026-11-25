@@ -91,7 +91,8 @@ func main() {
  ops, err := f.BuildPlan(c,e,g); if err != nil { panic(err) }
  if err := f.ValidateOperations(c,g,ops); err != nil { panic(err) }
  json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"fragment":fragment,"inner":inner.String(),
- "outer":outer.String(),"peer_outer":peerOuter.String(),"peer_inner":peerInner.String(),"operations":ops})
+ "outer":outer.String(),"peer_outer":peerOuter.String(),"peer_inner":peerInner.String(),"operations":ops,
+ "config":c,"fixture_guards":g})
 }
 ''')
         binary = root / 'bridge'
@@ -108,6 +109,47 @@ def render(repo, recovery_json=None):
         return json.loads(subprocess.check_output(command, input=recovery_json, timeout=10))
 
 
+def reconcile(r, payload, installed, installed_fw4):
+    """Fixture-owned reconciliation only; readiness remains synthetic."""
+    current = query_kernel_state(r)
+    routes = verify_inventory_unchanged(installed, current)
+    verify_fw4_unchanged(installed_fw4, query_fw4(r))
+    c = payload['config']
+    links = json.loads(current['raw']['links'])
+    evidence = dict(Verified=True, OwnershipVerified=True, OwnedConfig=c,
+        Environment=dict(Verified=True,
+            Interfaces={link['ifname']: link['mtu'] for link in links},
+            LocalPublicKey=c['LocalPublicKey'], LocalFIPSAddress=payload['outer'],
+            AddressesConflictFree=True, PolicyOrderSafe=True, OuterRouteVerified=True),
+        Tunnel=dict(Name='exit-test', Mode='ipip6', Device='mesh-test',
+            Local=payload['outer'], Remote=payload['peer_outer'],
+            Inner=payload['inner']+'/32', MTU=1240, Up=True, ExactParameters=True),
+        GuestRule=dict(Priority=10000, Table=200, InputInterface='guest-test', Exact=True),
+        Routes=routes)
+    request = dict(Config=c, RecoveryEvidence=evidence, GuardReadiness=payload['fixture_guards'])
+    print(json.dumps({'recovery_fixture_evidence': request}), flush=True)
+    response = json.loads(subprocess.check_output(
+        [payload['recovery_bridge'], 'recovery'], input=json.dumps(request).encode(), timeout=10),
+        object_pairs_hook=_routes['_unique_object'])
+    expected = dict(Kind='tunnel-default', Program='ip', Args=[
+        '-4', 'route', 'add', 'default', 'dev', 'exit-test', 'table', '200',
+        'metric', '100', 'proto', 'static'])
+    ops = response.get('operations')
+    if ops is None:
+        ops = []
+    if set(response) != {'operations'} or ops != ([expected] if len(routes) == 1 else []):
+        raise ValueError('unexpected recovery operations')
+    # Recollect immediately before execution; no privileged build, repair or fallback.
+    fresh = query_kernel_state(r)
+    if fresh != current:
+        raise ValueError('recovery observation changed before execution')
+    verify_fw4_unchanged(installed_fw4, query_fw4(r))
+    for op in ops:
+        print(json.dumps({'recovery_operation': op}), flush=True)
+        r.ns('consumer', [op['Program'], *op['Args']], timeout=5, check=True).check_returncode()
+    return ops
+
+
 def ipip6(r, payload):
     """Kernel-only fixture: exact consumer plan, IPv6 veth replacing FIPS."""
     def ns(name, *argv):
@@ -115,6 +157,7 @@ def ipip6(r, payload):
     for name, iface in (('guest', 'guest-test'), ('peer', 'mesh-test')):
         ns('consumer', 'ip', 'link', 'add', iface, 'type', 'veth', 'peer', 'name', 'remote')
         ns('consumer', 'ip', 'link', 'set', 'remote', 'netns', name)
+        ns('consumer', 'ip', 'link', 'set', iface, 'addrgenmode', 'none')
         ns('consumer', 'ip', 'link', 'set', iface, 'up')
         ns(name, 'ip', 'link', 'set', 'remote', 'up')
     ns('consumer', 'ip', 'addr', 'add', '10.73.1.1/24', 'dev', 'guest-test')
@@ -177,6 +220,10 @@ def ipip6(r, payload):
     print(json.dumps({'tunnel_state': 'up', 'fw4_fixture_snapshot': current_fw4}), flush=True)
     # Continuity only, never inferred GuardReadiness or semantic firewall proof.
     verify_fw4_unchanged(installed_fw4, current_fw4)
+    print('FIXTURE ASSUMPTIONS: FIPS/DNS/NDS/portal readiness synthetic; IPv6 veth is not FIPS transport', flush=True)
+    assert len(reconcile(r, payload, installed, installed_fw4)) == 1
+    restored = query_kernel_state(r)
+    verify_fixture_baseline(restored, payload)
     recovered = ns('guest', 'ping', '-n', '-c', '1', '-W', '2', payload['peer_inner'])
     print(recovered.stdout, flush=True)
     observed = json.loads(ns('peer', 'nft', '-j', 'list', 'chain', 'inet', 'observation', 'observed').stdout)
@@ -185,7 +232,9 @@ def ipip6(r, payload):
     assert recovered_count > count, 'peer did not observe recovered roundtrip source'
     print(json.dumps({'tunnel_state': 'up', 'guest_ping_returncode': recovered.returncode,
                       'peer_echo_request_delta': recovered_count - count}), flush=True)
-    print('PASS: kernel ipip6 roundtrip/down/up; no direct-WAN fallback proof (no decoy), FIPS transport, NDS, or paid service', flush=True)
+    assert reconcile(r, payload, installed, installed_fw4) == [], 'second recovery must be no-op'
+    print('PASS: healthy second BuildRecoveryPlan call returned no operations', flush=True)
+    print('PASS: kernel ipip6 roundtrip/down/up with planner recovery; no direct-WAN fallback proof (no decoy), FIPS transport, NDS, or paid service', flush=True)
 
 
 def inside(payload, host_net, host_mount, mode='veth'):

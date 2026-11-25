@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class FakeRunner:
     def __init__(self):
         records = [json.loads(line) for line in
-                   (ROOT / 'results/fips-recovery-slice/packet.log').read_text().splitlines()
+                   (ROOT / 'scripts/fixtures/fips-kernel-observations.jsonl').read_text().splitlines()
                    if line.startswith('{')]
         self.observations = {r['tunnel_state']: r['kernel_observations']
                              for r in records if 'kernel_observations' in r}
@@ -32,6 +32,8 @@ class FakeRunner:
             self.state = 'down'
         elif argv == ['ip', 'link', 'set', 'exit-test', 'up']:
             self.state = 'up'
+        elif argv[:4] == ['ip', '-4', 'route', 'add']:
+            self.observations['up'] = copy.deepcopy(self.observations['installed'])
         elif argv[:2] == ['ip', '-j']:
             section = {('-d', 'link'): 'links', ('address', 'show'): 'addresses',
                        ('-6', 'tunnel'): 'tunnels', ('-4', 'rule'): 'rules',
@@ -61,10 +63,12 @@ class PacketOrchestrationTests(unittest.TestCase):
         self.payload = dict(outer='fd01:d0fa:bd25:1fcb:be2b:93b4:b927:b26a',
                             peer_outer='fd57:78f9:85db:754c:6628:691f:56fa:dae5',
                             inner='100.65.208.250', peer_inner='100.87.120.249',
-                            fragment='', operations=[])
+                            fragment='', operations=[], recovery_bridge='/prebuilt/bridge',
+                            config={'LocalPublicKey': [1]+[0]*31}, fixture_guards={})
 
     def execute(self):
-        with patch.object(subprocess, 'run', self.runner.run), contextlib.redirect_stdout(io.StringIO()):
+        op = dict(Kind='tunnel-default', Program='ip', Args=['-4', 'route', 'add', 'default', 'dev', 'exit-test', 'table', '200', 'metric', '100', 'proto', 'static'])
+        with patch.object(subprocess, 'check_output', side_effect=[json.dumps({'operations':[op]}).encode(), b'{"operations":null}']), patch.object(subprocess, 'run', self.runner.run), contextlib.redirect_stdout(io.StringIO()):
             self.ipip6(self.runner, self.payload)
 
     def test_valid_inventory_calls_validators_once_and_allows_recovered_ping(self):
@@ -76,14 +80,12 @@ class PacketOrchestrationTests(unittest.TestCase):
             self.execute()
             baseline = globals_['verify_fixture_baseline']
             unchanged = globals_['verify_inventory_unchanged']
-            baseline.assert_called_once()
-            unchanged.assert_called_once()
+            self.assertEqual(baseline.call_count, 2)
+            self.assertEqual(unchanged.call_count, 3)
             self.assertIs(baseline.call_args.args[1], self.payload)
-            self.assertIs(baseline.call_args.args[0], unchanged.call_args.args[0])
-            self.assertEqual(unchanged.call_args.args[1], self.runner.observations['up'])
         queries = [state for state, name, argv in self.runner.calls
                    if argv == ['ip', '-j', '-d', 'link', 'show']]
-        self.assertEqual(queries, ['installed', 'down', 'up'])
+        self.assertEqual(queries, ['installed', 'down', 'up', 'up', 'up', 'up', 'up', 'up'])
         guest_pings = [state for state, name, argv in self.runner.calls
                        if name == 'guest' and argv[0] == 'ping']
         self.assertEqual(guest_pings, ['installed', 'down', 'up'])
@@ -93,7 +95,7 @@ class PacketOrchestrationTests(unittest.TestCase):
         self.execute()
         queries = [state for state, name, argv in self.runner.calls
                    if name == 'consumer' and argv == ['nft', '-j', 'list', 'table', 'inet', 'fw4']]
-        self.assertEqual(queries, ['installed', 'up'])
+        self.assertEqual(queries, ['installed', 'up', 'up', 'up', 'up', 'up'])
 
     def test_removed_or_changed_fw4_guard_stops_up_ping(self):
         for change in ('removed', 'changed'):

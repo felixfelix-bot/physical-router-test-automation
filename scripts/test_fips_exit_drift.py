@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class DriftTests(unittest.TestCase):
     def test_installed_to_up_and_mutations(self):
         observations = {}
-        for line in (ROOT / 'results/fips-recovery-slice/packet.log').read_text().splitlines():
+        for line in (ROOT / 'scripts/fixtures/fips-kernel-observations.jsonl').read_text().splitlines():
             if line.startswith('{'):
                 event = json.loads(line)
                 if 'kernel_observations' in event:
