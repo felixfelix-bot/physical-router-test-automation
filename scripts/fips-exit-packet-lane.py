@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """One opt-in, hardware-free kernel lane; see docs/fips-exit-packet-lane.md."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -14,6 +15,13 @@ import tempfile
 
 # Reuse the canonical netns command runner, not its hardware/radio lifecycle.
 Runner = runpy.run_path(str(Path(__file__).with_name('hwsim-netns-poc.py')))['Runner']
+_routes = runpy.run_path(str(Path(__file__).with_name('fips-exit-routes.py')))
+query_kernel_state = _routes['query_kernel_state']
+verify_fixture_baseline = _routes['verify_fixture_baseline']
+verify_inventory_unchanged = _routes['verify_inventory_unchanged']
+_firewall = runpy.run_path(str(Path(__file__).with_name('fips-exit-firewall.py')))
+query_fw4 = _firewall['query_fw4']
+verify_fw4_unchanged = _firewall['verify_fw4_unchanged']
 PIN = '3a0077e67be67c23c520978b42be274f3cad9b84'
 NAMES = ('consumer', 'guest', 'peer', 'wan', 'other')
 
@@ -25,8 +33,16 @@ class Lane(Runner):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
-def render(repo, recovery_json=None):
-    """Compile unmodified renderer dependencies taken from pinned git objects."""
+@contextmanager
+def build_bridge(repo):
+    """Build once with the pinned compiler; retain until the caller exits."""
+    manifest = json.loads(subprocess.check_output(
+        ['git', '-C', repo, 'show', f'{PIN}:packaging/build-inputs.json'], timeout=10))
+    go = Path(os.environ.get('TG_TOOLS', str(Path.home() / '.cache/tollgate-tools'))) / 'go/bin/go'
+    env = dict(os.environ, GOTOOLCHAIN='local', GOWORK='off', GOFLAGS='', CGO_ENABLED='0')
+    version = subprocess.check_output([str(go), 'env', 'GOVERSION'], env=env, timeout=10).decode().strip()
+    if version != 'go' + manifest['go']['version']:
+        raise ValueError('compiler does not match pinned manifest: ' + version)
     with tempfile.TemporaryDirectory(prefix='prta-render-') as temp:
         root = Path(temp)
         (root / 'fips_exit').mkdir()
@@ -78,10 +94,18 @@ func main() {
  "outer":outer.String(),"peer_outer":peerOuter.String(),"peer_inner":peerInner.String(),"operations":ops})
 }
 ''')
-        command = ['go', 'run', '.']
+        binary = root / 'bridge'
+        subprocess.run([str(go), 'build', '-o', str(binary), '.'], cwd=root,
+                       env=env, check=True, timeout=120)
+        yield binary
+
+
+def render(repo, recovery_json=None):
+    with build_bridge(repo) as binary:
+        command = [str(binary)]
         if recovery_json is not None:
             command.append('recovery')
-        return json.loads(subprocess.check_output(command, cwd=root, input=recovery_json))
+        return json.loads(subprocess.check_output(command, input=recovery_json, timeout=10))
 
 
 def ipip6(r, payload):
@@ -130,19 +154,29 @@ def ipip6(r, payload):
                 for expr in item.get('rule', {}).get('expr', []) if 'counter' in expr)
     assert count > 0, 'peer did not observe derived inner IPv4 source'
     print(json.dumps({'peer_observed_snat_source': payload['inner'], 'echo_requests': count}), flush=True)
+    installed_fw4 = query_fw4(r)
+    print(json.dumps({'tunnel_state': 'installed', 'fw4_fixture_snapshot': installed_fw4}), flush=True)
+    installed = query_kernel_state(r)
+    print(json.dumps({'tunnel_state': 'installed',
+                      'kernel_observations': installed}), flush=True)
+    verify_fixture_baseline(installed, payload)
     ns('consumer', 'ip', 'link', 'set', 'exit-test', 'down')
     failed = r.ns('guest', ['ping', '-n', '-c', '1', '-W', '2', payload['peer_inner']], check=False)
     print(failed.stdout, flush=True)
     assert failed.returncode == 1, (failed.returncode, failed.stdout, failed.stderr)
-    routes = json.loads(ns('consumer', 'ip', '-j', '-4', 'route', 'show', 'table', '200').stdout)
-    assert any(route.get('type') == 'unreachable' and route.get('dst') == 'default'
-               for route in routes), ('dedicated unreachable default missing', routes)
+    observations = query_kernel_state(r)
     print(json.dumps({'tunnel_state': 'down', 'guest_ping_returncode': failed.returncode,
-                      'table_200_routes': routes}), flush=True)
+                      'kernel_observations': observations}), flush=True)
     # Restore the same interface; do not recreate the tunnel or reapply the plan.
     ns('consumer', 'ip', 'link', 'set', 'exit-test', 'up')
-    print(json.dumps({'tunnel_state': 'up', 'table_200_routes': json.loads(
-        ns('consumer', 'ip', '-j', '-4', 'route', 'show', 'table', '200').stdout)}), flush=True)
+    current = query_kernel_state(r)
+    print(json.dumps({'tunnel_state': 'up',
+                      'kernel_observations': current}), flush=True)
+    verify_inventory_unchanged(installed, current)
+    current_fw4 = query_fw4(r)
+    print(json.dumps({'tunnel_state': 'up', 'fw4_fixture_snapshot': current_fw4}), flush=True)
+    # Continuity only, never inferred GuardReadiness or semantic firewall proof.
+    verify_fw4_unchanged(installed_fw4, current_fw4)
     recovered = ns('guest', 'ping', '-n', '-c', '1', '-W', '2', payload['peer_inner'])
     print(recovered.stdout, flush=True)
     observed = json.loads(ns('peer', 'nft', '-j', 'list', 'chain', 'inet', 'observation', 'observed').stdout)
@@ -259,13 +293,16 @@ def main():
         raw = sys.stdin.buffer.read() if args.recovery_json == '-' else Path(args.recovery_json).read_bytes()
         print(json.dumps(render(args.module_repo, raw)))
         return
-    payload = render(args.module_repo)
-    print(json.dumps({'module_sha': PIN, 'fragment_sha256': hashlib.sha256(payload['fragment'].encode()).hexdigest(), 'inner': payload['inner']}), flush=True)
-    # Private mount namespace prevents named-netns bind mounts escaping to the host.
-    subprocess.run(['sudo', '-n', 'unshare', '--mount', '--net', '--propagation', 'private',
-                    'env', 'TMPDIR=' + tempfile.gettempdir(), 'python3', str(Path(__file__).resolve()),
-                    '--mode', args.mode, '--inside', os.readlink('/proc/self/ns/net'), os.readlink('/proc/self/ns/mnt')],
-                   input=json.dumps(payload), text=True, check=True)
+    with build_bridge(args.module_repo) as binary:
+        payload = json.loads(subprocess.check_output([str(binary)], timeout=10))
+        payload['recovery_bridge'] = str(binary)
+        print(json.dumps({'module_sha': PIN, 'fragment_sha256': hashlib.sha256(payload['fragment'].encode()).hexdigest(), 'inner': payload['inner']}), flush=True)
+        # Retain the executable until the synchronous isolated child exits.
+        # Private mount namespace prevents named-netns bind mounts escaping to the host.
+        subprocess.run(['sudo', '-n', 'unshare', '--mount', '--net', '--propagation', 'private',
+                        'env', 'TMPDIR=' + tempfile.gettempdir(), 'python3', str(Path(__file__).resolve()),
+                        '--mode', args.mode, '--inside', os.readlink('/proc/self/ns/net'), os.readlink('/proc/self/ns/mnt')],
+                       input=json.dumps(payload), text=True, check=True)
 
 
 if __name__ == '__main__':
