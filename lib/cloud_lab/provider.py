@@ -509,6 +509,14 @@ class LocalKVMProvider(LocalProvider):
     all test code runs identically regardless of provider.
 
     Privacy: can_publish=False — local VMs may contain real configs.
+
+    Host selection (PRTA-VM-LAB-LOCAL): the QEMU host comes from
+    ``TOLLGATE_VLAB_HOST`` (default ``localhost`` — the bench behaviour), so
+    the lab can run on a KVM-capable machine (e.g. DQ05, ssh alias ``dq05``)
+    instead of wherever the tests execute. The OpenWrt image profile is
+    ``TOLLGATE_VLAB_OPENWRT`` (e.g. ``25.12``); unset means the lab default
+    (pinned 24.10.1). SSH reachability of the VM itself (10.99.99.1) is
+    expected on, or routed via, that host.
     """
 
     provider_name = "local-kvm"
@@ -531,6 +539,8 @@ class LocalKVMProvider(LocalProvider):
 
     def __init__(self):
         super().__init__()
+        self._vlab_host = os.environ.get("TOLLGATE_VLAB_HOST", "localhost")
+        self._vlab_openwrt = os.environ.get("TOLLGATE_VLAB_OPENWRT", "")
         self._openwrt_pid: int | None = None
         self._debian_pid: int | None = None
         self._bridge_created = False
@@ -552,13 +562,16 @@ class LocalKVMProvider(LocalProvider):
 
         log.info("Starting POC via virtual-lab.py start-poc")
         env = {**os.environ, "PYTHONPATH": os.path.dirname(os.path.dirname(os.path.dirname(__file__)))}
-        r = subprocess.run(
-            [sys.executable, script, "start-poc",
-             "--host", "localhost",
-             "--workdir", vlab],
-            capture_output=True, text=True, timeout=300,
-            env=env,
-        )
+        cmd = [sys.executable, script, "start-poc",
+               "--host", self._vlab_host,
+               "--workdir", vlab]
+        if self._vlab_openwrt:
+            cmd.extend(["--openwrt-version", self._vlab_openwrt])
+        # Full start sequence on a busy host: infra + serial provisioning +
+        # client boot + client SSH probe can legitimately take ~8-15 min on
+        # a fresh client overlay (cloud-init) — 900s stays bounded but does
+        # not cut a healthy slow boot short.
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900, env=env)
         if r.returncode != 0:
             raise RuntimeError(
                 f"virtual-lab.py start-poc failed (exit {r.returncode}):\n{r.stderr[:500]}"
@@ -603,7 +616,7 @@ class LocalKVMProvider(LocalProvider):
         env = {**os.environ, "PYTHONPATH": os.path.dirname(os.path.dirname(os.path.dirname(__file__)))}
         r = subprocess.run(
             [sys.executable, script, "stop-poc",
-             "--host", "localhost",
+             "--host", self._vlab_host,
              "--workdir", vlab],
             capture_output=True, text=True, timeout=60,
             env=env,
